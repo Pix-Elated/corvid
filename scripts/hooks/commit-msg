@@ -1,0 +1,41 @@
+#!/bin/bash
+# Commit message hook: Enforces Conventional Commits format
+
+COMMIT_MSG_FILE=$1
+COMMIT_MSG=$(cat "$COMMIT_MSG_FILE")
+
+# Conventional Commits pattern
+# type(scope): description
+# Types: feat, fix, docs, style, refactor, test, chore, perf, ci, build
+PATTERN="^(feat|fix|docs|style|refactor|test|chore|perf|ci|build)(\(.+\))?: .{1,}"
+
+if ! echo "$COMMIT_MSG" | grep -qE "$PATTERN"; then
+    echo "ERROR: Invalid commit message format."
+    echo ""
+    echo "Commit messages must follow Conventional Commits format:"
+    echo "  type(scope): description"
+    echo ""
+    echo "Valid types:"
+    echo "  feat     - A new feature"
+    echo "  fix      - A bug fix"
+    echo "  docs     - Documentation changes"
+    echo "  style    - Code style changes (formatting, etc.)"
+    echo "  refactor - Code refactoring"
+    echo "  test     - Adding or updating tests"
+    echo "  chore    - Maintenance tasks"
+    echo "  perf     - Performance improvements"
+    echo "  ci       - CI/CD changes"
+    echo "  build    - Build system changes"
+    echo ""
+    echo "Examples:"
+    echo "  feat(api): add status endpoint"
+    echo "  fix(parser): handle missing dates in maintenance messages"
+    echo "  docs: update README with deployment instructions"
+    echo "  chore: update dependencies"
+    echo ""
+    echo "Your message was:"
+    echo "  $COMMIT_MSG"
+    exit 1
+fi
+
+exit 0

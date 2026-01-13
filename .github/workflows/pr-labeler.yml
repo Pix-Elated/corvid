@@ -1,0 +1,87 @@
+name: PR Labeler
+
+on:
+  pull_request:
+    branches: [staging]
+    types: [opened, synchronize, reopened]
+
+jobs:
+  label:
+    name: Auto Label PR
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v45
+
+      - name: Determine labels
+        id: labels
+        run: |
+          LABELS=""
+
+          # Area labels based on changed files
+          if echo "${{ steps.changed-files.outputs.all_changed_files }}" | grep -qE "src/discord/"; then
+            LABELS="$LABELS,area:discord"
+          fi
+          if echo "${{ steps.changed-files.outputs.all_changed_files }}" | grep -qE "src/api/"; then
+            LABELS="$LABELS,area:api"
+          fi
+          if echo "${{ steps.changed-files.outputs.all_changed_files }}" | grep -qE "src/bootstrap/"; then
+            LABELS="$LABELS,area:bootstrap"
+          fi
+          if echo "${{ steps.changed-files.outputs.all_changed_files }}" | grep -qE "src/parser/"; then
+            LABELS="$LABELS,area:parser"
+          fi
+          if echo "${{ steps.changed-files.outputs.all_changed_files }}" | grep -qE "\.github/|Dockerfile"; then
+            LABELS="$LABELS,area:infra"
+          fi
+
+          # Type labels from branch name
+          BRANCH="${{ github.head_ref }}"
+          if [[ "$BRANCH" == feat/* || "$BRANCH" == feature/* ]]; then
+            LABELS="$LABELS,type:feature"
+          elif [[ "$BRANCH" == fix/* || "$BRANCH" == bugfix/* ]]; then
+            LABELS="$LABELS,type:bug"
+          elif [[ "$BRANCH" == refactor/* ]]; then
+            LABELS="$LABELS,type:refactor"
+          elif [[ "$BRANCH" == docs/* ]]; then
+            LABELS="$LABELS,type:docs"
+          elif [[ "$BRANCH" == chore/* ]]; then
+            LABELS="$LABELS,type:chore"
+          fi
+
+          # Version bump from commits
+          COMMITS=$(git log origin/staging..HEAD --pretty=format:"%s" 2>/dev/null || echo "")
+          if echo "$COMMITS" | grep -qE "^feat.*!:|BREAKING CHANGE"; then
+            LABELS="$LABELS,version:major"
+          elif echo "$COMMITS" | grep -qE "^feat"; then
+            LABELS="$LABELS,version:minor"
+          elif echo "$COMMITS" | grep -qE "^fix|^refactor|^perf"; then
+            LABELS="$LABELS,version:patch"
+          fi
+
+          # Remove leading comma
+          LABELS="${LABELS#,}"
+          echo "labels=$LABELS" >> $GITHUB_OUTPUT
+
+      - name: Apply labels
+        if: steps.labels.outputs.labels != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const labels = '${{ steps.labels.outputs.labels }}'.split(',').filter(l => l);
+            if (labels.length > 0) {
+              await github.rest.issues.addLabels({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                labels: labels
+              });
+            }

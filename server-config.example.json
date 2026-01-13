@@ -1,0 +1,56 @@
+{
+  "roles": [
+    {
+      "name": "Admin",
+      "color": "#e74c3c",
+      "hoist": true,
+      "mentionable": false
+    },
+    {
+      "name": "Moderator",
+      "color": "#3498db",
+      "hoist": true,
+      "mentionable": false
+    },
+    {
+      "name": "Support Team",
+      "color": "#2ecc71",
+      "hoist": true,
+      "mentionable": true
+    },
+    {
+      "name": "Verified",
+      "color": "#9b59b6",
+      "hoist": false,
+      "mentionable": false
+    },
+    {
+      "name": "Unverified",
+      "color": "#95a5a6",
+      "hoist": false,
+      "mentionable": false
+    }
+  ],
+  "categories": [
+    {
+      "name": "INFORMATION",
+      "channels": ["welcome", "rules", "announcements", "roadmap"]
+    },
+    {
+      "name": "SUPPORT",
+      "channels": ["faq", "support-general", "bug-reports", "feature-requests"]
+    },
+    {
+      "name": "COMMUNITY",
+      "channels": ["general", "off-topic", "screenshots"]
+    },
+    {
+      "name": "STAFF ONLY",
+      "channels": ["staff-chat", "moderation-log", "support-tickets"]
+    },
+    {
+      "name": "BOT",
+      "channels": ["bot-logs", "server-status"]
+    }
+  ]
+}
