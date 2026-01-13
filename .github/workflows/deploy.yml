@@ -4,22 +4,12 @@ on:
   push:
     branches: [master]
   workflow_dispatch:
-    inputs:
-      environment:
-        description: 'Deployment environment'
-        required: true
-        default: 'production'
-        type: choice
-        options:
-          - production
 
 env:
-  AZURE_CONTAINER_REGISTRY: ${{ secrets.AZURE_CONTAINER_REGISTRY }}
-  REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
-  REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
   RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
   CONTAINER_APP_NAME: corvid
-  IMAGE_NAME: corvid
 
 jobs:
   test:
@@ -47,9 +37,12 @@ jobs:
         run: npm run build
 
   build-and-push:
-    name: Build & Push Image
+    name: Build & Push to GHCR
     runs-on: ubuntu-latest
     needs: test
+    permissions:
+      contents: read
+      packages: write
     outputs:
       image_tag: ${{ steps.meta.outputs.version }}
     steps:
@@ -61,12 +54,12 @@ jobs:
           VERSION=$(node -p "require('./package.json').version")
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Login to Azure Container Registry
+      - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
         with:
-          registry: ${{ env.AZURE_CONTAINER_REGISTRY }}
-          username: ${{ env.REGISTRY_USERNAME }}
-          password: ${{ env.REGISTRY_PASSWORD }}
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
@@ -74,8 +67,8 @@ jobs:
           context: .
           push: true
           tags: |
-            ${{ env.AZURE_CONTAINER_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
-            ${{ env.AZURE_CONTAINER_REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
 
   deploy:
     name: Deploy to Azure Container Apps
@@ -89,11 +82,11 @@ jobs:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Deploy to Container App
-        uses: azure/container-apps-deploy-action@v1
-        with:
-          resourceGroup: ${{ env.RESOURCE_GROUP }}
-          containerAppName: ${{ env.CONTAINER_APP_NAME }}
-          imageToDeploy: ${{ env.AZURE_CONTAINER_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.build-and-push.outputs.image_tag }}
+        run: |
+          az containerapp update \
+            --name ${{ env.CONTAINER_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --image ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.build-and-push.outputs.image_tag }}
 
       - name: Verify deployment
         run: |
@@ -123,6 +116,8 @@ jobs:
     name: Create GitHub Release
     runs-on: ubuntu-latest
     needs: deploy
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
