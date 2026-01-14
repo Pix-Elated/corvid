@@ -52,6 +52,35 @@ async function main(): Promise<void> {
     await handleGuildMemberAdd(member);
   });
 
+  // Discord client resilience handlers
+  client.on(Events.Error, (error) => {
+    console.error('[Main] Discord client error:', error);
+    // Don't exit - let discord.js attempt to recover
+  });
+
+  client.on(Events.Warn, (warning) => {
+    console.warn('[Main] Discord client warning:', warning);
+  });
+
+  client.on(Events.ShardDisconnect, (event, shardId) => {
+    console.warn(
+      `[Main] Shard ${shardId} disconnected (code: ${event.code}), will attempt reconnect...`
+    );
+  });
+
+  client.on(Events.ShardReconnecting, (shardId) => {
+    console.log(`[Main] Shard ${shardId} reconnecting...`);
+  });
+
+  client.on(Events.ShardResume, (shardId, replayedEvents) => {
+    console.log(`[Main] Shard ${shardId} resumed, replayed ${replayedEvents} events`);
+  });
+
+  client.on(Events.ShardError, (error, shardId) => {
+    console.error(`[Main] Shard ${shardId} error:`, error);
+    // Don't exit - let discord.js handle shard recovery
+  });
+
   // Start Express API server
   const app = createApiServer();
   await startApiServer(app, config.port);
@@ -87,12 +116,14 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 // Handle uncaught errors
 process.on('uncaughtException', (error) => {
   console.error('[Main] Uncaught exception:', error);
+  // Only exit for truly fatal errors - let container orchestrator restart
   process.exit(1);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
   console.error('[Main] Unhandled rejection at:', promise, 'reason:', reason);
-  process.exit(1);
+  // Log but don't exit - many rejections are recoverable (network issues, rate limits, etc.)
+  // The bot can continue operating even if individual operations fail
 });
 
 // Start the application

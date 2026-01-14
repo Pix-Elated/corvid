@@ -2,9 +2,12 @@ import { Client, REST, Routes, TextChannel, Message } from 'discord.js';
 import { getConfig } from '../../config';
 import { parseMunkMessage } from '../../parser/munk';
 import { updateStatus, updateMaintenance } from '../../state';
+import { loadTicketState } from '../../tickets';
+import { startAutoClose } from '../../tickets/autoclose';
 import { setupCommand } from '../commands/setup';
 import { verifyCommand } from '../commands/verify';
 import { populateCommand } from '../commands/populate';
+import { ticketSetupCommand } from '../commands/ticket-setup';
 import {
   banCommand,
   kickCommand,
@@ -26,11 +29,17 @@ export async function handleReady(client: Client): Promise<void> {
 
   console.log(`[Ready] Logged in as ${client.user.tag}`);
 
+  // Load ticket state from file
+  loadTicketState();
+
   // Register slash commands
   await registerCommands(client);
 
   // Fetch and parse the most recent status message
   await fetchLatestStatusMessage(client);
+
+  // Start ticket auto-close checker
+  startAutoClose(client);
 }
 
 /**
@@ -43,6 +52,7 @@ async function registerCommands(client: Client): Promise<void> {
     setupCommand.data.toJSON(),
     verifyCommand.data.toJSON(),
     populateCommand.data.toJSON(),
+    ticketSetupCommand.data.toJSON(),
     banCommand.data.toJSON(),
     kickCommand.data.toJSON(),
     muteCommand.data.toJSON(),
