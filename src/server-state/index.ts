@@ -163,7 +163,9 @@ export function trackMessage(key: string, channelId: string, messageId: string):
 /**
  * Get a tracked message
  */
-export function getTrackedMessage(key: string): { channelId: string; messageId: string } | undefined {
+export function getTrackedMessage(
+  key: string
+): { channelId: string; messageId: string } | undefined {
   return currentState.messages[key];
 }
 
