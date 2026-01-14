@@ -3,6 +3,7 @@ import { getConfig } from '../../config';
 import { parseMunkMessage } from '../../parser/munk';
 import { updateStatus, updateMaintenance } from '../../state';
 import { setupCommand } from '../commands/setup';
+import { verifyCommand } from '../commands/verify';
 
 /**
  * Handle the ready event - bot is connected and ready
@@ -28,7 +29,7 @@ export async function handleReady(client: Client): Promise<void> {
 async function registerCommands(client: Client): Promise<void> {
   const config = getConfig();
 
-  const commands = [setupCommand.data.toJSON()];
+  const commands = [setupCommand.data.toJSON(), verifyCommand.data.toJSON()];
 
   const rest = new REST({ version: '10' }).setToken(config.discordBotToken);
 

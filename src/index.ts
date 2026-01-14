@@ -1,10 +1,11 @@
-import { Client, Events, Interaction } from 'discord.js';
+import { Client, Events } from 'discord.js';
 import { loadConfig } from './config';
 import { loadState } from './state';
 import { createClient } from './discord/client';
 import { handleReady } from './discord/events/ready';
 import { handleMessageCreate } from './discord/events/messageCreate';
-import { setupCommand } from './discord/commands/setup';
+import { handleInteractionCreate } from './discord/events/interactionCreate';
+import { handleGuildMemberAdd } from './discord/events/guildMemberAdd';
 import { createApiServer, startApiServer } from './api/server';
 
 let client: Client | null = null;
@@ -40,13 +41,14 @@ async function main(): Promise<void> {
     handleMessageCreate(message);
   });
 
-  // Handle slash commands
-  client.on(Events.InteractionCreate, async (interaction: Interaction) => {
-    if (!interaction.isChatInputCommand()) return;
+  // Handle all interactions (commands, buttons, etc.)
+  client.on(Events.InteractionCreate, async (interaction) => {
+    await handleInteractionCreate(interaction);
+  });
 
-    if (interaction.commandName === 'setup') {
-      await setupCommand.execute(interaction);
-    }
+  // Auto-assign Unverified role to new members
+  client.on(Events.GuildMemberAdd, async (member) => {
+    await handleGuildMemberAdd(member);
   });
 
   // Start Express API server
