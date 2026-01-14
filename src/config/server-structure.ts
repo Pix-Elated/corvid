@@ -100,13 +100,6 @@ export const defaultServerStructure: ServerStructure = {
       mentionable: false,
       permissions: 0n, // No permissions at all
     },
-    {
-      name: 'Unverified',
-      color: 0x95a5a6, // Gray
-      hoist: false,
-      mentionable: false,
-      permissions: PermissionFlagsBits.ReadMessageHistory,
-    },
   ],
 
   categories: [
@@ -114,17 +107,15 @@ export const defaultServerStructure: ServerStructure = {
       name: 'VERIFICATION',
       permissionOverwrites: [
         {
+          // @everyone CAN see this category - it's the landing zone
           role: '@everyone',
-          deny: ['ViewChannel'],
-        },
-        {
-          role: 'Unverified',
           allow: ['ViewChannel', 'ReadMessageHistory'],
-          deny: ['SendMessages', 'AddReactions'],
+          deny: ['SendMessages', 'AddReactions', 'CreatePublicThreads', 'CreatePrivateThreads'],
         },
         {
+          // Hide from verified users - they don't need it anymore
           role: 'Verified',
-          deny: ['ViewChannel'], // Hide after verification
+          deny: ['ViewChannel'],
         },
         {
           role: 'Quarantine',
@@ -136,13 +127,6 @@ export const defaultServerStructure: ServerStructure = {
           name: 'verify-here',
           type: ChannelType.GuildText,
           topic: 'Click the button below to verify and gain access to the server.',
-          permissionOverwrites: [
-            {
-              role: 'Unverified',
-              allow: ['ViewChannel', 'ReadMessageHistory'],
-              deny: ['SendMessages', 'AddReactions'],
-            },
-          ],
         },
       ],
     },
@@ -150,9 +134,15 @@ export const defaultServerStructure: ServerStructure = {
       name: 'INFORMATION',
       permissionOverwrites: [
         {
+          // @everyone cannot see - must be verified
           role: '@everyone',
-          deny: ['SendMessages', 'AddReactions', 'CreatePublicThreads', 'CreatePrivateThreads'],
+          deny: ['ViewChannel'],
+        },
+        {
+          // Verified users can see but not send
+          role: 'Verified',
           allow: ['ViewChannel', 'ReadMessageHistory'],
+          deny: ['SendMessages', 'AddReactions', 'CreatePublicThreads', 'CreatePrivateThreads'],
         },
         {
           role: 'Quarantine',
@@ -190,11 +180,8 @@ export const defaultServerStructure: ServerStructure = {
       name: 'SUPPORT',
       permissionOverwrites: [
         {
+          // @everyone cannot see - must be verified
           role: '@everyone',
-          deny: ['ViewChannel'],
-        },
-        {
-          role: 'Unverified',
           deny: ['ViewChannel'],
         },
         {
@@ -256,11 +243,8 @@ export const defaultServerStructure: ServerStructure = {
       name: 'COMMUNITY',
       permissionOverwrites: [
         {
+          // @everyone cannot see - must be verified
           role: '@everyone',
-          deny: ['ViewChannel'],
-        },
-        {
-          role: 'Unverified',
           deny: ['ViewChannel'],
         },
         {
@@ -360,11 +344,8 @@ export const defaultServerStructure: ServerStructure = {
       name: 'VOICE',
       permissionOverwrites: [
         {
+          // @everyone cannot see or connect - must be verified
           role: '@everyone',
-          deny: ['ViewChannel', 'Connect'],
-        },
-        {
-          role: 'Unverified',
           deny: ['ViewChannel', 'Connect'],
         },
         {
@@ -425,11 +406,8 @@ export const defaultServerStructure: ServerStructure = {
       name: 'STAFF ONLY',
       permissionOverwrites: [
         {
+          // @everyone cannot see - staff only
           role: '@everyone',
-          deny: ['ViewChannel'],
-        },
-        {
-          role: 'Unverified',
           deny: ['ViewChannel'],
         },
         {
@@ -475,11 +453,8 @@ export const defaultServerStructure: ServerStructure = {
       name: 'BOT',
       permissionOverwrites: [
         {
+          // @everyone cannot see - admin/mod only
           role: '@everyone',
-          deny: ['ViewChannel'],
-        },
-        {
-          role: 'Unverified',
           deny: ['ViewChannel'],
         },
         {

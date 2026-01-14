@@ -3,10 +3,11 @@ import { setupCommand } from '../commands/setup';
 import { verifyCommand } from '../commands/verify';
 
 const VERIFIED_ROLE_NAME = 'Verified';
-const UNVERIFIED_ROLE_NAME = 'Unverified';
 
 /**
  * Handle button interactions for verification
+ * Note: We use @everyone permission restrictions so new members can only see #verify-here
+ * This button just adds the Verified role to grant access to other channels
  */
 async function handleVerifyButton(interaction: ButtonInteraction): Promise<void> {
   if (!interaction.guild || !interaction.member) {
@@ -42,17 +43,8 @@ async function handleVerifyButton(interaction: ButtonInteraction): Promise<void>
   }
 
   try {
-    // Add Verified role
+    // Add Verified role - this grants access to other channels
     await member.roles.add(verifiedRole, 'User verified via button');
-
-    // Remove Unverified role if they have it
-    const unverifiedRole = interaction.guild.roles.cache.find(
-      (r) => r.name.toLowerCase() === UNVERIFIED_ROLE_NAME.toLowerCase()
-    );
-
-    if (unverifiedRole && member.roles.cache.has(unverifiedRole.id)) {
-      await member.roles.remove(unverifiedRole, 'User verified');
-    }
 
     const successEmbed = new EmbedBuilder()
       .setTitle('✅ Verification Complete')

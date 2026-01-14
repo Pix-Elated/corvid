@@ -1,30 +1,17 @@
 import { GuildMember } from 'discord.js';
 
-const UNVERIFIED_ROLE_NAME = 'Unverified';
-
 /**
- * Handle new member joins - assign Unverified role automatically
+ * Handle new member joins - just log for now
+ * Note: Verification is handled via @everyone permissions (deny all except verify channel)
+ * so new members automatically can only see the verification channel without needing a role
  */
 export async function handleGuildMemberAdd(member: GuildMember): Promise<void> {
-  // Don't assign role to bots
   if (member.user.bot) {
-    console.log(`[MemberAdd] Bot ${member.user.tag} joined, skipping role assignment`);
+    console.log(`[MemberAdd] Bot ${member.user.tag} joined`);
     return;
   }
 
-  try {
-    const unverifiedRole = member.guild.roles.cache.find(
-      (r) => r.name.toLowerCase() === UNVERIFIED_ROLE_NAME.toLowerCase()
-    );
-
-    if (!unverifiedRole) {
-      console.warn('[MemberAdd] Unverified role not found, cannot assign to new member');
-      return;
-    }
-
-    await member.roles.add(unverifiedRole, 'New member - auto-assigned Unverified role');
-    console.log(`[MemberAdd] Assigned Unverified role to ${member.user.tag}`);
-  } catch (error) {
-    console.error(`[MemberAdd] Failed to assign Unverified role to ${member.user.tag}:`, error);
-  }
+  console.log(`[MemberAdd] New member joined: ${member.user.tag}`);
+  // No role assignment needed - @everyone permissions restrict access
+  // User will only see #verify-here until they click the verify button
 }
