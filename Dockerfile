@@ -6,8 +6,8 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install all dependencies (including dev)
-RUN npm ci
+# Install all dependencies (including dev, ignore scripts for git hooks)
+RUN npm ci --ignore-scripts
 
 # Copy source code
 COPY tsconfig.json ./
