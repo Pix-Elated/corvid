@@ -1,9 +1,4 @@
-import {
-  Interaction,
-  ButtonInteraction,
-  GuildMember,
-  EmbedBuilder,
-} from 'discord.js';
+import { Interaction, ButtonInteraction, GuildMember, EmbedBuilder } from 'discord.js';
 import { setupCommand } from '../commands/setup';
 import { verifyCommand } from '../commands/verify';
 

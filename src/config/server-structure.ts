@@ -151,12 +151,7 @@ export const defaultServerStructure: ServerStructure = {
       permissionOverwrites: [
         {
           role: '@everyone',
-          deny: [
-            'SendMessages',
-            'AddReactions',
-            'CreatePublicThreads',
-            'CreatePrivateThreads',
-          ],
+          deny: ['SendMessages', 'AddReactions', 'CreatePublicThreads', 'CreatePrivateThreads'],
           allow: ['ViewChannel', 'ReadMessageHistory'],
         },
         {
