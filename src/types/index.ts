@@ -109,3 +109,28 @@ export interface TicketState {
   tickets: Ticket[];
   nextId: number;
 }
+
+// Reaction Roles Types
+export interface RoleOption {
+  roleId: string;
+  roleName: string;
+  emoji: string;
+  description?: string;
+}
+
+export interface RolePanel {
+  id: string; // e.g., "panel-0001"
+  messageId: string; // Discord message ID with the buttons
+  channelId: string; // Channel where panel is posted
+  guildId: string;
+  title: string;
+  description?: string;
+  roles: RoleOption[];
+  createdAt: string;
+  createdBy: string;
+}
+
+export interface ReactionRolesState {
+  panels: RolePanel[];
+  nextId: number;
+}

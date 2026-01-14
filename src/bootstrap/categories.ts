@@ -8,6 +8,7 @@ import {
   DiscordAPIError,
 } from 'discord.js';
 import { CategoryConfig, PermissionString } from '../types';
+import { trackCategory } from '../server-state';
 
 export interface CategoryCreationResult {
   created: string[];
@@ -128,6 +129,7 @@ export async function createCategories(
           console.log(`[Categories] Category "${categoryConfig.name}" already exists, skipping`);
           result.skipped.push(categoryConfig.name);
           result.categoryMap.set(categoryConfig.name, existingCategory as CategoryChannel);
+          trackCategory(categoryConfig.name, existingCategory.id);
           success = true;
           break;
         }
@@ -153,6 +155,7 @@ export async function createCategories(
 
         result.created.push(categoryConfig.name);
         result.categoryMap.set(categoryConfig.name, category);
+        trackCategory(categoryConfig.name, category.id);
         console.log(`[Categories] Created category "${categoryConfig.name}"`);
         success = true;
 
