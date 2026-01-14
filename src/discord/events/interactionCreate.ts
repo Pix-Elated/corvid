@@ -2,6 +2,7 @@ import { Interaction, ButtonInteraction, GuildMember, EmbedBuilder } from 'disco
 import { setupCommand } from '../commands/setup';
 import { verifyCommand } from '../commands/verify';
 import { populateCommand } from '../commands/populate';
+import { ticketSetupCommand } from '../commands/ticket-setup';
 import {
   banCommand,
   kickCommand,
@@ -11,6 +12,13 @@ import {
   warningsCommand,
   clearWarningsCommand,
 } from '../commands/moderation';
+import {
+  handleTicketButton,
+  handleTicketModal,
+  handleCloseButton,
+  handleCloseConfirm,
+  handleCloseCancel,
+} from './ticketHandler';
 
 const VERIFIED_ROLE_NAME = 'Verified';
 
@@ -87,8 +95,41 @@ async function handleVerifyButton(interaction: ButtonInteraction): Promise<void>
 export async function handleInteractionCreate(interaction: Interaction): Promise<void> {
   // Handle button interactions
   if (interaction.isButton()) {
-    if (interaction.customId === 'verify_button') {
+    const buttonId = interaction.customId;
+
+    // Verification button
+    if (buttonId === 'verify_button') {
       await handleVerifyButton(interaction);
+      return;
+    }
+
+    // Ticket creation buttons
+    if (buttonId.startsWith('ticket_') && !buttonId.includes('close')) {
+      await handleTicketButton(interaction);
+      return;
+    }
+
+    // Ticket close buttons
+    if (buttonId === 'ticket_close') {
+      await handleCloseButton(interaction);
+      return;
+    }
+    if (buttonId === 'ticket_close_confirm') {
+      await handleCloseConfirm(interaction);
+      return;
+    }
+    if (buttonId === 'ticket_close_cancel') {
+      await handleCloseCancel(interaction);
+      return;
+    }
+
+    return;
+  }
+
+  // Handle modal submissions
+  if (interaction.isModalSubmit()) {
+    if (interaction.customId.startsWith('ticket_modal_')) {
+      await handleTicketModal(interaction);
       return;
     }
     return;
@@ -109,6 +150,9 @@ export async function handleInteractionCreate(interaction: Interaction): Promise
         break;
       case 'populate':
         await populateCommand.execute(interaction);
+        break;
+      case 'ticket-setup':
+        await ticketSetupCommand.execute(interaction);
         break;
       case 'ban':
         await banCommand.execute(interaction);

@@ -1,13 +1,34 @@
-import { Message } from 'discord.js';
+import { Message, MessageType, TextChannel } from 'discord.js';
 import { getConfig } from '../../config';
 import { parseMunkMessage } from '../../parser/munk';
 import { updateStatus, updateMaintenance } from '../../state';
+import { updateTicketActivity } from '../../tickets';
 import { handleAutoMod } from './automod';
 
 /**
  * Handle new messages - auto-mod and parse embeds from the source channel
  */
 export async function handleMessageCreate(message: Message): Promise<void> {
+  // Auto-delete "X pinned a message" system notifications
+  if (message.type === MessageType.ChannelPinnedMessage) {
+    try {
+      await message.delete();
+      console.log('[MessageCreate] Deleted pin notification message');
+    } catch (error) {
+      console.error('[MessageCreate] Failed to delete pin message:', error);
+    }
+    return;
+  }
+
+  // Update ticket activity if this is a ticket channel
+  if (
+    message.channel instanceof TextChannel &&
+    message.channel.name.match(/^ticket-\d{4}/) &&
+    !message.author.bot
+  ) {
+    updateTicketActivity(message.channel.id);
+  }
+
   // Run auto-moderation first
   const wasModerated = await handleAutoMod(message);
   if (wasModerated) {

@@ -240,6 +240,64 @@ export const defaultServerStructure: ServerStructure = {
       ],
     },
     {
+      name: 'TICKETS',
+      permissionOverwrites: [
+        {
+          role: '@everyone',
+          deny: ['ViewChannel'],
+        },
+        {
+          role: 'Unverified',
+          deny: ['ViewChannel'],
+        },
+        {
+          role: 'Quarantine',
+          deny: ['ViewChannel'],
+        },
+        {
+          role: 'Muted',
+          deny: ['SendMessages', 'AddReactions'],
+        },
+        {
+          role: 'Support Team',
+          allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory', 'ManageChannels'],
+        },
+        {
+          role: 'Moderator',
+          allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory', 'ManageChannels'],
+        },
+        {
+          role: 'Admin',
+          allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory', 'ManageChannels'],
+        },
+      ],
+      channels: [
+        {
+          name: 'create-ticket',
+          type: ChannelType.GuildText,
+          topic: 'Click a button below to open a support ticket.',
+          permissionOverwrites: [
+            {
+              role: 'Verified',
+              allow: ['ViewChannel', 'ReadMessageHistory'],
+              deny: ['SendMessages'], // Can only use buttons, not chat
+            },
+          ],
+        },
+        {
+          name: 'ticket-logs',
+          type: ChannelType.GuildText,
+          topic: 'Ticket transcripts and closure logs (staff only).',
+          permissionOverwrites: [
+            {
+              role: 'Verified',
+              deny: ['ViewChannel'],
+            },
+          ],
+        },
+      ],
+    },
+    {
       name: 'COMMUNITY',
       permissionOverwrites: [
         {
@@ -329,14 +387,9 @@ export const defaultServerStructure: ServerStructure = {
           topic: 'Orthodox Warriors guild discussion.',
         },
         {
-          name: 'guild-events',
+          name: 'guild-announcements',
           type: ChannelType.GuildText,
-          topic: 'Guild events, raids, and scheduled activities.',
-        },
-        {
-          name: 'guild-roster',
-          type: ChannelType.GuildText,
-          topic: 'Guild member roster and recruitment.',
+          topic: 'Guild announcements and important updates.',
         },
       ],
     },
