@@ -191,3 +191,13 @@ export function getExpiredWarnings(gracePeriodHours: number): Ticket[] {
   const cutoff = new Date(Date.now() - gracePeriodHours * 60 * 60 * 1000).toISOString();
   return currentState.tickets.filter((t) => t.warnedAt && t.warnedAt < cutoff);
 }
+
+/**
+ * Get ticket statistics
+ */
+export function getTicketStats(): { active: number; total: number } {
+  return {
+    active: currentState.tickets.length,
+    total: currentState.nextId - 1,
+  };
+}

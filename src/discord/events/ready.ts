@@ -9,6 +9,8 @@ import { verifyCommand } from '../commands/verify';
 import { populateCommand } from '../commands/populate';
 import { ticketSetupCommand } from '../commands/ticket-setup';
 import { rolesSetupCommand } from '../commands/roles-setup';
+import { statusCommand } from '../commands/status';
+import { postInfoCardsCommand } from '../commands/post-info-cards';
 import {
   banCommand,
   kickCommand,
@@ -55,6 +57,8 @@ async function registerCommands(client: Client): Promise<void> {
     populateCommand.data.toJSON(),
     ticketSetupCommand.data.toJSON(),
     rolesSetupCommand.data.toJSON(),
+    statusCommand.data.toJSON(),
+    postInfoCardsCommand.data.toJSON(),
     banCommand.data.toJSON(),
     kickCommand.data.toJSON(),
     muteCommand.data.toJSON(),

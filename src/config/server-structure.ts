@@ -250,6 +250,18 @@ export const defaultServerStructure: ServerStructure = {
           type: ChannelType.GuildText,
           topic: 'Suggest new features for the app.',
         },
+        {
+          name: 'create-ticket',
+          type: ChannelType.GuildText,
+          topic: 'Click a button below to open a support ticket.',
+          permissionOverwrites: [
+            {
+              role: 'Verified',
+              allow: ['ViewChannel', 'ReadMessageHistory'],
+              deny: ['SendMessages'], // Can only use buttons, not chat
+            },
+          ],
+        },
       ],
     },
     {
@@ -284,31 +296,7 @@ export const defaultServerStructure: ServerStructure = {
           allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory', 'ManageChannels'],
         },
       ],
-      channels: [
-        {
-          name: 'create-ticket',
-          type: ChannelType.GuildText,
-          topic: 'Click a button below to open a support ticket.',
-          permissionOverwrites: [
-            {
-              role: 'Verified',
-              allow: ['ViewChannel', 'ReadMessageHistory'],
-              deny: ['SendMessages'], // Can only use buttons, not chat
-            },
-          ],
-        },
-        {
-          name: 'ticket-logs',
-          type: ChannelType.GuildText,
-          topic: 'Ticket transcripts and closure logs (staff only).',
-          permissionOverwrites: [
-            {
-              role: 'Verified',
-              deny: ['ViewChannel'],
-            },
-          ],
-        },
-      ],
+      channels: [], // Dynamic ticket channels created here
     },
     {
       name: 'COMMUNITY',
@@ -407,6 +395,16 @@ export const defaultServerStructure: ServerStructure = {
           type: ChannelType.GuildText,
           topic: 'Guild announcements and important updates.',
         },
+        {
+          name: 'Guild Voice',
+          type: ChannelType.GuildVoice,
+          permissionOverwrites: [
+            {
+              role: 'Orthodox Warriors',
+              allow: ['ViewChannel', 'Connect', 'Speak'],
+            },
+          ],
+        },
       ],
     },
     {
@@ -449,24 +447,6 @@ export const defaultServerStructure: ServerStructure = {
         {
           name: 'General Voice',
           type: ChannelType.GuildVoice,
-        },
-        {
-          name: 'Gaming',
-          type: ChannelType.GuildVoice,
-        },
-        {
-          name: 'Guild Voice',
-          type: ChannelType.GuildVoice,
-          permissionOverwrites: [
-            {
-              role: 'Verified',
-              deny: ['Connect'],
-            },
-            {
-              role: 'Orthodox Warriors',
-              allow: ['ViewChannel', 'Connect', 'Speak'],
-            },
-          ],
         },
         {
           name: 'AFK',
@@ -515,12 +495,7 @@ export const defaultServerStructure: ServerStructure = {
         {
           name: 'moderation-log',
           type: ChannelType.GuildText,
-          topic: 'Moderation actions and logs.',
-        },
-        {
-          name: 'support-tickets',
-          type: ChannelType.GuildText,
-          topic: 'Support ticket management.',
+          topic: 'All moderation actions, audit logs, and ticket transcripts.',
         },
       ],
     },

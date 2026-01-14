@@ -4,6 +4,8 @@ import { verifyCommand } from '../commands/verify';
 import { populateCommand } from '../commands/populate';
 import { ticketSetupCommand } from '../commands/ticket-setup';
 import { rolesSetupCommand } from '../commands/roles-setup';
+import { statusCommand } from '../commands/status';
+import { postInfoCardsCommand } from '../commands/post-info-cards';
 import { handleRoleButton } from './rolePickerHandler';
 import {
   banCommand,
@@ -164,6 +166,12 @@ export async function handleInteractionCreate(interaction: Interaction): Promise
         break;
       case 'roles-setup':
         await rolesSetupCommand.execute(interaction);
+        break;
+      case 'status':
+        await statusCommand.execute(interaction);
+        break;
+      case 'post-info-cards':
+        await postInfoCardsCommand.execute(interaction);
         break;
       case 'ban':
         await banCommand.execute(interaction);
