@@ -3,6 +3,8 @@ import { setupCommand } from '../commands/setup';
 import { verifyCommand } from '../commands/verify';
 import { populateCommand } from '../commands/populate';
 import { ticketSetupCommand } from '../commands/ticket-setup';
+import { rolesSetupCommand } from '../commands/roles-setup';
+import { handleRoleButton } from './rolePickerHandler';
 import {
   banCommand,
   kickCommand,
@@ -123,6 +125,12 @@ export async function handleInteractionCreate(interaction: Interaction): Promise
       return;
     }
 
+    // Role picker buttons
+    if (buttonId.startsWith('role_toggle_')) {
+      await handleRoleButton(interaction);
+      return;
+    }
+
     return;
   }
 
@@ -153,6 +161,9 @@ export async function handleInteractionCreate(interaction: Interaction): Promise
         break;
       case 'ticket-setup':
         await ticketSetupCommand.execute(interaction);
+        break;
+      case 'roles-setup':
+        await rolesSetupCommand.execute(interaction);
         break;
       case 'ban':
         await banCommand.execute(interaction);

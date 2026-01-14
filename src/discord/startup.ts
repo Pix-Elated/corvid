@@ -103,7 +103,11 @@ export async function sendStartupMessage(client: Client): Promise<void> {
       embed.setColor(0x3498db); // Blue for graceful
     }
   } else {
-    embed.addFields({ name: 'Previous Shutdown', value: 'Unknown (first start or no record)', inline: true });
+    embed.addFields({
+      name: 'Previous Shutdown',
+      value: 'Unknown (first start or no record)',
+      inline: true,
+    });
   }
 
   try {

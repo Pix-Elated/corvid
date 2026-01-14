@@ -16,14 +16,13 @@ export async function handleGuildMemberRemove(
 
   // Calculate how long they were in the server
   const joinedAt = member.joinedAt;
-  const duration = joinedAt
-    ? formatDuration(Date.now() - joinedAt.getTime())
-    : 'Unknown';
+  const duration = joinedAt ? formatDuration(Date.now() - joinedAt.getTime()) : 'Unknown';
 
-  const roles = member.roles.cache
-    .filter((r) => r.name !== '@everyone')
-    .map((r) => r.name)
-    .join(', ') || 'None';
+  const roles =
+    member.roles.cache
+      .filter((r) => r.name !== '@everyone')
+      .map((r) => r.name)
+      .join(', ') || 'None';
 
   const embed = new EmbedBuilder()
     .setTitle('Member Left')

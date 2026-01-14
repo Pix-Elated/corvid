@@ -4,9 +4,7 @@ import { logAuditEvent, AuditColors, truncate } from '../audit';
 /**
  * Handle message deletions - log deleted content
  */
-export async function handleMessageDelete(
-  message: Message | PartialMessage
-): Promise<void> {
+export async function handleMessageDelete(message: Message | PartialMessage): Promise<void> {
   // Need guild for logging
   if (!message.guild) return;
 
@@ -24,9 +22,7 @@ export async function handleMessageDelete(
     `[MessageDelete] Message deleted ${author ? `by ${author.tag}` : '(unknown author)'} in #${message.channel}`
   );
 
-  const content = message.content
-    ? truncate(message.content, 1024)
-    : '*No text content*';
+  const content = message.content ? truncate(message.content, 1024) : '*No text content*';
 
   const embed = new EmbedBuilder()
     .setTitle('Message Deleted')

@@ -3,6 +3,7 @@ import { loadConfig } from './config';
 import { loadState } from './state';
 import { loadTicketState } from './tickets';
 import { loadWarningsState } from './warnings';
+import { loadReactionRolesState } from './reaction-roles';
 import { createClient } from './discord/client';
 import { handleReady } from './discord/events/ready';
 import { handleMessageCreate } from './discord/events/messageCreate';
@@ -36,6 +37,7 @@ async function main(): Promise<void> {
   loadState();
   loadTicketState();
   loadWarningsState();
+  loadReactionRolesState();
 
   // Create Discord client
   client = createClient();
@@ -126,7 +128,8 @@ async function shutdown(signal: string): Promise<void> {
   console.log(`[Main] Received ${signal}, shutting down gracefully...`);
 
   // Record shutdown for next startup message
-  const reason = signal === 'SIGTERM' ? 'Graceful shutdown (deployment/restart)' : 'Graceful shutdown (manual)';
+  const reason =
+    signal === 'SIGTERM' ? 'Graceful shutdown (deployment/restart)' : 'Graceful shutdown (manual)';
   recordShutdown(reason, signal);
 
   if (client) {
