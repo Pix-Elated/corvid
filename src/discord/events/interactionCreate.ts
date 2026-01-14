@@ -1,12 +1,23 @@
 import { Interaction, ButtonInteraction, GuildMember, EmbedBuilder } from 'discord.js';
 import { setupCommand } from '../commands/setup';
 import { verifyCommand } from '../commands/verify';
+import { populateCommand } from '../commands/populate';
+import {
+  banCommand,
+  kickCommand,
+  muteCommand,
+  unmuteCommand,
+  warnCommand,
+  warningsCommand,
+  clearWarningsCommand,
+} from '../commands/moderation';
 
 const VERIFIED_ROLE_NAME = 'Verified';
-const UNVERIFIED_ROLE_NAME = 'Unverified';
 
 /**
  * Handle button interactions for verification
+ * Note: We use @everyone permission restrictions so new members can only see #verify-here
+ * This button just adds the Verified role to grant access to other channels
  */
 async function handleVerifyButton(interaction: ButtonInteraction): Promise<void> {
   if (!interaction.guild || !interaction.member) {
@@ -42,17 +53,8 @@ async function handleVerifyButton(interaction: ButtonInteraction): Promise<void>
   }
 
   try {
-    // Add Verified role
+    // Add Verified role - this grants access to other channels
     await member.roles.add(verifiedRole, 'User verified via button');
-
-    // Remove Unverified role if they have it
-    const unverifiedRole = interaction.guild.roles.cache.find(
-      (r) => r.name.toLowerCase() === UNVERIFIED_ROLE_NAME.toLowerCase()
-    );
-
-    if (unverifiedRole && member.roles.cache.has(unverifiedRole.id)) {
-      await member.roles.remove(unverifiedRole, 'User verified');
-    }
 
     const successEmbed = new EmbedBuilder()
       .setTitle('✅ Verification Complete')
@@ -104,6 +106,30 @@ export async function handleInteractionCreate(interaction: Interaction): Promise
         break;
       case 'verify':
         await verifyCommand.execute(interaction);
+        break;
+      case 'populate':
+        await populateCommand.execute(interaction);
+        break;
+      case 'ban':
+        await banCommand.execute(interaction);
+        break;
+      case 'kick':
+        await kickCommand.execute(interaction);
+        break;
+      case 'mute':
+        await muteCommand.execute(interaction);
+        break;
+      case 'unmute':
+        await unmuteCommand.execute(interaction);
+        break;
+      case 'warn':
+        await warnCommand.execute(interaction);
+        break;
+      case 'warnings':
+        await warningsCommand.execute(interaction);
+        break;
+      case 'clearwarnings':
+        await clearWarningsCommand.execute(interaction);
         break;
       default:
         console.warn(`[InteractionCreate] Unknown command: ${commandName}`);

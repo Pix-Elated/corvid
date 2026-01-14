@@ -37,8 +37,9 @@ async function main(): Promise<void> {
     await handleReady(readyClient);
   });
 
-  client.on(Events.MessageCreate, (message) => {
-    handleMessageCreate(message);
+  // Handle messages (auto-mod + status parsing)
+  client.on(Events.MessageCreate, async (message) => {
+    await handleMessageCreate(message);
   });
 
   // Handle all interactions (commands, buttons, etc.)
@@ -46,7 +47,7 @@ async function main(): Promise<void> {
     await handleInteractionCreate(interaction);
   });
 
-  // Auto-assign Unverified role to new members
+  // Log new members
   client.on(Events.GuildMemberAdd, async (member) => {
     await handleGuildMemberAdd(member);
   });

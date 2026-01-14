@@ -4,6 +4,16 @@ import { parseMunkMessage } from '../../parser/munk';
 import { updateStatus, updateMaintenance } from '../../state';
 import { setupCommand } from '../commands/setup';
 import { verifyCommand } from '../commands/verify';
+import { populateCommand } from '../commands/populate';
+import {
+  banCommand,
+  kickCommand,
+  muteCommand,
+  unmuteCommand,
+  warnCommand,
+  warningsCommand,
+  clearWarningsCommand,
+} from '../commands/moderation';
 
 /**
  * Handle the ready event - bot is connected and ready
@@ -29,7 +39,18 @@ export async function handleReady(client: Client): Promise<void> {
 async function registerCommands(client: Client): Promise<void> {
   const config = getConfig();
 
-  const commands = [setupCommand.data.toJSON(), verifyCommand.data.toJSON()];
+  const commands = [
+    setupCommand.data.toJSON(),
+    verifyCommand.data.toJSON(),
+    populateCommand.data.toJSON(),
+    banCommand.data.toJSON(),
+    kickCommand.data.toJSON(),
+    muteCommand.data.toJSON(),
+    unmuteCommand.data.toJSON(),
+    warnCommand.data.toJSON(),
+    warningsCommand.data.toJSON(),
+    clearWarningsCommand.data.toJSON(),
+  ];
 
   const rest = new REST({ version: '10' }).setToken(config.discordBotToken);
 
