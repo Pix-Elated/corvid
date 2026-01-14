@@ -2,11 +2,19 @@ import { Message } from 'discord.js';
 import { getConfig } from '../../config';
 import { parseMunkMessage } from '../../parser/munk';
 import { updateStatus, updateMaintenance } from '../../state';
+import { handleAutoMod } from './automod';
 
 /**
- * Handle new messages - parse embeds from the source channel
+ * Handle new messages - auto-mod and parse embeds from the source channel
  */
-export function handleMessageCreate(message: Message): void {
+export async function handleMessageCreate(message: Message): Promise<void> {
+  // Run auto-moderation first
+  const wasModerated = await handleAutoMod(message);
+  if (wasModerated) {
+    // Message was deleted by auto-mod, don't process further
+    return;
+  }
+
   const config = getConfig();
 
   // Skip if no source channel configured

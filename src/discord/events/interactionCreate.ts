@@ -1,6 +1,16 @@
 import { Interaction, ButtonInteraction, GuildMember, EmbedBuilder } from 'discord.js';
 import { setupCommand } from '../commands/setup';
 import { verifyCommand } from '../commands/verify';
+import { populateCommand } from '../commands/populate';
+import {
+  banCommand,
+  kickCommand,
+  muteCommand,
+  unmuteCommand,
+  warnCommand,
+  warningsCommand,
+  clearWarningsCommand,
+} from '../commands/moderation';
 
 const VERIFIED_ROLE_NAME = 'Verified';
 
@@ -96,6 +106,30 @@ export async function handleInteractionCreate(interaction: Interaction): Promise
         break;
       case 'verify':
         await verifyCommand.execute(interaction);
+        break;
+      case 'populate':
+        await populateCommand.execute(interaction);
+        break;
+      case 'ban':
+        await banCommand.execute(interaction);
+        break;
+      case 'kick':
+        await kickCommand.execute(interaction);
+        break;
+      case 'mute':
+        await muteCommand.execute(interaction);
+        break;
+      case 'unmute':
+        await unmuteCommand.execute(interaction);
+        break;
+      case 'warn':
+        await warnCommand.execute(interaction);
+        break;
+      case 'warnings':
+        await warningsCommand.execute(interaction);
+        break;
+      case 'clearwarnings':
+        await clearWarningsCommand.execute(interaction);
         break;
       default:
         console.warn(`[InteractionCreate] Unknown command: ${commandName}`);
