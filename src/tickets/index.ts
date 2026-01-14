@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import { Ticket, TicketState, TicketType } from '../types';
 
 const TICKETS_FILE = path.join(process.cwd(), 'tickets.json');
@@ -13,14 +14,51 @@ const defaultState: TicketState = {
 let currentState: TicketState = { ...defaultState };
 
 /**
+ * Atomically write data to a file (write to temp, then rename)
+ */
+function atomicWriteSync(filePath: string, data: string): void {
+  const tempFile = path.join(
+    os.tmpdir(),
+    `tickets-${Date.now()}-${Math.random().toString(36)}.tmp`
+  );
+  try {
+    fs.writeFileSync(tempFile, data, 'utf-8');
+    fs.renameSync(tempFile, filePath);
+  } catch (error) {
+    // Clean up temp file if rename failed
+    try {
+      fs.unlinkSync(tempFile);
+    } catch {
+      // Ignore cleanup errors
+    }
+    throw error;
+  }
+}
+
+/**
+ * Validate that loaded data matches expected schema
+ */
+function isValidTicketState(data: unknown): data is TicketState {
+  if (typeof data !== 'object' || data === null) return false;
+  const obj = data as Record<string, unknown>;
+  return Array.isArray(obj.tickets) && typeof obj.nextId === 'number';
+}
+
+/**
  * Load ticket state from tickets.json file
  */
 export function loadTicketState(): TicketState {
   try {
     if (fs.existsSync(TICKETS_FILE)) {
       const data = fs.readFileSync(TICKETS_FILE, 'utf-8');
-      currentState = JSON.parse(data) as TicketState;
-      console.log(`[Tickets] Loaded ${currentState.tickets.length} tickets from file`);
+      const parsed = JSON.parse(data);
+      if (isValidTicketState(parsed)) {
+        currentState = parsed;
+        console.log(`[Tickets] Loaded ${currentState.tickets.length} tickets from file`);
+      } else {
+        console.warn('[Tickets] Invalid tickets file format, using default state');
+        currentState = { ...defaultState };
+      }
     } else {
       console.log('[Tickets] No tickets file found, using default state');
       currentState = { ...defaultState };
@@ -33,11 +71,11 @@ export function loadTicketState(): TicketState {
 }
 
 /**
- * Save current ticket state to tickets.json file
+ * Save current ticket state to tickets.json file (atomic write)
  */
 function saveTicketState(): void {
   try {
-    fs.writeFileSync(TICKETS_FILE, JSON.stringify(currentState, null, 2), 'utf-8');
+    atomicWriteSync(TICKETS_FILE, JSON.stringify(currentState, null, 2));
     console.log('[Tickets] Ticket state saved to file');
   } catch (error) {
     console.error('[Tickets] Error saving tickets file:', error);

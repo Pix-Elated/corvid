@@ -30,8 +30,10 @@ pids/
 *.seed
 *.pid.lock
 
-# State file (generated at runtime)
+# State files (generated at runtime)
 status.json
+tickets.json
+warnings.json
 
 # Coverage
 coverage/

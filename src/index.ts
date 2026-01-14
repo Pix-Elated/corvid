@@ -1,6 +1,8 @@
 import { Client, Events } from 'discord.js';
 import { loadConfig } from './config';
 import { loadState } from './state';
+import { loadTicketState } from './tickets';
+import { loadWarningsState } from './warnings';
 import { createClient } from './discord/client';
 import { handleReady } from './discord/events/ready';
 import { handleMessageCreate } from './discord/events/messageCreate';
@@ -28,6 +30,8 @@ async function main(): Promise<void> {
 
   // Load persisted state
   loadState();
+  loadTicketState();
+  loadWarningsState();
 
   // Create Discord client
   client = createClient();

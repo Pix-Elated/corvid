@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import { StatusState, ServerStatus, MaintenanceInfo } from '../types';
 
 const STATE_FILE = path.join(process.cwd(), 'status.json');
@@ -14,14 +15,52 @@ const defaultState: StatusState = {
 let currentState: StatusState = { ...defaultState };
 
 /**
+ * Atomically write data to a file (write to temp, then rename)
+ */
+function atomicWriteSync(filePath: string, data: string): void {
+  const tempFile = path.join(os.tmpdir(), `state-${Date.now()}-${Math.random().toString(36)}.tmp`);
+  try {
+    fs.writeFileSync(tempFile, data, 'utf-8');
+    fs.renameSync(tempFile, filePath);
+  } catch (error) {
+    // Clean up temp file if rename failed
+    try {
+      fs.unlinkSync(tempFile);
+    } catch {
+      // Ignore cleanup errors
+    }
+    throw error;
+  }
+}
+
+/**
+ * Validate that loaded data matches expected schema
+ */
+function isValidStatusState(data: unknown): data is StatusState {
+  if (typeof data !== 'object' || data === null) return false;
+  const obj = data as Record<string, unknown>;
+  return (
+    typeof obj.status === 'string' &&
+    ['online', 'maintenance', 'offline'].includes(obj.status) &&
+    typeof obj.lastUpdated === 'string'
+  );
+}
+
+/**
  * Load state from status.json file
  */
 export function loadState(): StatusState {
   try {
     if (fs.existsSync(STATE_FILE)) {
       const data = fs.readFileSync(STATE_FILE, 'utf-8');
-      currentState = JSON.parse(data) as StatusState;
-      console.log('[State] Loaded state from file:', currentState.status);
+      const parsed = JSON.parse(data);
+      if (isValidStatusState(parsed)) {
+        currentState = parsed;
+        console.log('[State] Loaded state from file:', currentState.status);
+      } else {
+        console.warn('[State] Invalid state file format, using default state');
+        currentState = { ...defaultState };
+      }
     } else {
       console.log('[State] No state file found, using default state');
       currentState = { ...defaultState };
@@ -34,11 +73,11 @@ export function loadState(): StatusState {
 }
 
 /**
- * Save current state to status.json file
+ * Save current state to status.json file (atomic write)
  */
 export function saveState(): void {
   try {
-    fs.writeFileSync(STATE_FILE, JSON.stringify(currentState, null, 2), 'utf-8');
+    atomicWriteSync(STATE_FILE, JSON.stringify(currentState, null, 2));
     console.log('[State] State saved to file');
   } catch (error) {
     console.error('[State] Error saving state file:', error);
