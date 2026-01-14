@@ -9,7 +9,7 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME: pix-elated/corvid
   RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
-  CONTAINER_APP_NAME: corvid
+  CONTAINER_APP_NAME: corvid-discord
 
 jobs:
   test:
