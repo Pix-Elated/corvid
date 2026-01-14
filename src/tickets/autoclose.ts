@@ -25,10 +25,10 @@ async function closeTicket(client: Client, ticket: Ticket, reason: string): Prom
     const { text, attachment } = await generateTranscript(channel, ticket);
     const messageCount = text.split('\n\n').length;
 
-    // Find ticket-logs channel
+    // Find moderation-log channel for ticket transcripts
     const guild = channel.guild;
     const logsChannel = guild.channels.cache.find(
-      (ch) => ch.name === 'ticket-logs' && ch instanceof TextChannel
+      (ch) => ch.name === 'moderation-log' && ch instanceof TextChannel
     ) as TextChannel | undefined;
 
     // Post to logs channel
