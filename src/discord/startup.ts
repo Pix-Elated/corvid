@@ -52,12 +52,17 @@ function getLastShutdown(): ShutdownInfo | null {
  * Send startup notification to bot-logs channel
  */
 export async function sendStartupMessage(client: Client): Promise<void> {
+  console.log('[Startup] Preparing startup message...');
+
   const guild = client.guilds.cache.first();
 
   if (!guild) {
     console.warn('[Startup] No guild found, skipping startup message');
     return;
   }
+
+  // Fetch channels to ensure cache is populated
+  await guild.channels.fetch();
 
   const botLogsChannel = guild.channels.cache.find(
     (ch) => ch.name === 'bot-logs' && ch instanceof TextChannel
