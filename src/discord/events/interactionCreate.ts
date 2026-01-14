@@ -170,7 +170,7 @@ export async function handleInteractionCreate(interaction: Interaction): Promise
       case 'status':
         await statusCommand.execute(interaction);
         break;
-      case 'post-info-cards':
+      case 'info-cards':
         await postInfoCardsCommand.execute(interaction);
         break;
       case 'ban':
