@@ -6,6 +6,7 @@ import {
   TextChannel,
   ChannelType,
 } from 'discord.js';
+import { recordPopulate, trackMessage } from '../../server-state';
 
 // Channel content configuration
 const CHANNEL_EMBEDS: Record<string, EmbedBuilder[]> = {
@@ -222,9 +223,12 @@ export const populateCommand = {
         }
 
         // Send and pin each embed
-        for (const embed of embeds) {
+        for (let i = 0; i < embeds.length; i++) {
+          const embed = embeds[i];
           const message = await channel.send({ embeds: [embed] });
           await message.pin();
+          // Track the message for future reference
+          trackMessage(`populate_${channelName}_${i}`, channel.id, message.id);
         }
 
         results.push(`✅ #${channelName}: Posted and pinned`);
@@ -235,6 +239,9 @@ export const populateCommand = {
         );
       }
     }
+
+    // Record populate completion
+    recordPopulate();
 
     await interaction.editReply({
       content: `**Channel Population Results:**\n${results.join('\n')}`,

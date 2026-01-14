@@ -9,6 +9,7 @@ import {
 } from 'discord.js';
 import { ChannelConfig, CategoryConfig } from '../types';
 import { permissionsToBits } from './categories';
+import { trackChannel } from '../server-state';
 
 export interface ChannelCreationResult {
   created: string[];
@@ -113,6 +114,7 @@ export async function createChannelsInCategory(
             `[Channels] Channel "#${channelConfig.name}" already exists in "${category.name}", skipping`
           );
           result.skipped.push(`${category.name}/${channelConfig.name}`);
+          trackChannel(channelConfig.name, existingChannel.id);
           success = true;
           break;
         }
@@ -137,6 +139,7 @@ export async function createChannelsInCategory(
         })) as CreatedChannel;
 
         result.created.push(`${category.name}/${channel.name}`);
+        trackChannel(channelConfig.name, channel.id);
         console.log(`[Channels] Created channel "#${channelConfig.name}" in "${category.name}"`);
         success = true;
 

@@ -36,6 +36,7 @@ tickets.json
 warnings.json
 reaction-roles.json
 info-cards.json
+server-state.json
 .last-shutdown.json
 
 # Coverage

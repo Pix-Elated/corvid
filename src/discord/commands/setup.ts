@@ -1,5 +1,6 @@
 import { SlashCommandBuilder, ChatInputCommandInteraction, PermissionFlagsBits } from 'discord.js';
 import { bootstrapServer } from '../../bootstrap';
+import { setGuildId, recordSetup } from '../../server-state';
 
 export const setupCommand = {
   data: new SlashCommandBuilder()
@@ -20,8 +21,14 @@ export const setupCommand = {
 
     console.log(`[Setup] User ${interaction.user.tag} initiated server bootstrap`);
 
+    // Track the guild ID
+    setGuildId(guild.id);
+
     try {
       const result = await bootstrapServer(guild);
+
+      // Record setup completion
+      recordSetup();
 
       // Build response message
       const lines: string[] = [];
