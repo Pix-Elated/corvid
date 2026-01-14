@@ -6,8 +6,11 @@ import { loadWarningsState } from './warnings';
 import { createClient } from './discord/client';
 import { handleReady } from './discord/events/ready';
 import { handleMessageCreate } from './discord/events/messageCreate';
+import { handleMessageUpdate } from './discord/events/messageUpdate';
+import { handleMessageDelete } from './discord/events/messageDelete';
 import { handleInteractionCreate } from './discord/events/interactionCreate';
 import { handleGuildMemberAdd } from './discord/events/guildMemberAdd';
+import { handleGuildMemberRemove } from './discord/events/guildMemberRemove';
 import { createApiServer, startApiServer } from './api/server';
 
 let client: Client | null = null;
@@ -54,6 +57,21 @@ async function main(): Promise<void> {
   // Log new members
   client.on(Events.GuildMemberAdd, async (member) => {
     await handleGuildMemberAdd(member);
+  });
+
+  // Log member leaves
+  client.on(Events.GuildMemberRemove, async (member) => {
+    await handleGuildMemberRemove(member);
+  });
+
+  // Log message edits
+  client.on(Events.MessageUpdate, async (oldMessage, newMessage) => {
+    await handleMessageUpdate(oldMessage, newMessage);
+  });
+
+  // Log message deletions
+  client.on(Events.MessageDelete, async (message) => {
+    await handleMessageDelete(message);
   });
 
   // Discord client resilience handlers
