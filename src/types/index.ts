@@ -73,7 +73,6 @@ export interface Config {
   discordBotToken: string;
   guildId: string;
   sourceChannelId: string;
-  munkBotId: string;
   port: number;
   timezone: string;
 }

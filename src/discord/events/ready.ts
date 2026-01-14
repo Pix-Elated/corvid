@@ -18,8 +18,8 @@ export async function handleReady(client: Client): Promise<void> {
   // Register slash commands
   await registerCommands(client);
 
-  // Fetch and parse the most recent Munk message
-  await fetchLatestMunkMessage(client);
+  // Fetch and parse the most recent status message
+  await fetchLatestStatusMessage(client);
 }
 
 /**
@@ -46,10 +46,16 @@ async function registerCommands(client: Client): Promise<void> {
 }
 
 /**
- * Fetch the most recent Munk message from the source channel
+ * Fetch the most recent status message from the source channel
  */
-async function fetchLatestMunkMessage(client: Client): Promise<void> {
+async function fetchLatestStatusMessage(client: Client): Promise<void> {
   const config = getConfig();
+
+  // Skip if no source channel configured
+  if (!config.sourceChannelId) {
+    console.log('[Ready] No source channel configured, skipping status fetch');
+    return;
+  }
 
   try {
     const channel = await client.channels.fetch(config.sourceChannelId);
@@ -59,35 +65,31 @@ async function fetchLatestMunkMessage(client: Client): Promise<void> {
       return;
     }
 
-    // Fetch the last 50 messages and find the most recent from Munk
+    // Fetch the last 50 messages and find ones with embeds
     const messages = await channel.messages.fetch({ limit: 50 });
-    const munkMessages = messages.filter((msg: Message) => msg.author.id === config.munkBotId);
+    const embedMessages = messages.filter((msg: Message) => msg.embeds.length > 0);
 
-    if (munkMessages.size === 0) {
-      console.log('[Ready] No Munk messages found in source channel');
+    if (embedMessages.size === 0) {
+      console.log('[Ready] No messages with embeds found in source channel');
       return;
     }
 
-    // Get the most recent Munk message
-    const latestMessage = munkMessages.first();
-    if (!latestMessage) {
-      return;
-    }
-
-    console.log('[Ready] Found latest Munk message, parsing...');
-
-    // Parse the message
-    const parseResult = parseMunkMessage(latestMessage);
-
-    if (parseResult) {
-      if (parseResult.type === 'status') {
-        updateStatus(parseResult.status);
-      } else if (parseResult.type === 'maintenance') {
-        updateMaintenance(parseResult.maintenance);
+    // Try to parse messages until we find a valid one
+    for (const [, message] of embedMessages) {
+      const parseResult = parseMunkMessage(message);
+      if (parseResult) {
+        if (parseResult.type === 'status') {
+          updateStatus(parseResult.status);
+        } else if (parseResult.type === 'maintenance') {
+          updateMaintenance(parseResult.maintenance);
+        }
+        console.log('[Ready] Initial state set from channel message');
+        return;
       }
-      console.log('[Ready] Initial state set from latest Munk message');
     }
+
+    console.log('[Ready] No parseable status messages found');
   } catch (error) {
-    console.error('[Ready] Error fetching latest Munk message:', error);
+    console.error('[Ready] Error fetching status messages:', error);
   }
 }

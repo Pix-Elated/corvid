@@ -20,8 +20,7 @@ export function loadConfig(): Config {
   return {
     discordBotToken: getRequiredEnv('DISCORD_BOT_TOKEN'),
     guildId: getRequiredEnv('GUILD_ID'),
-    sourceChannelId: getRequiredEnv('SOURCE_CHANNEL_ID'),
-    munkBotId: getRequiredEnv('MUNK_BOT_ID'),
+    sourceChannelId: getOptionalEnv('SOURCE_CHANNEL_ID', ''),
     port: parseInt(getOptionalEnv('PORT', '3000'), 10),
     timezone: getOptionalEnv('TZ', 'UTC'),
   };
