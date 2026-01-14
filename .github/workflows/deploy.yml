@@ -44,15 +44,23 @@ jobs:
       contents: read
       packages: write
     outputs:
-      image_tag: ${{ steps.meta.outputs.version }}
+      image_tag: ${{ steps.meta.outputs.tag }}
+      version: ${{ steps.meta.outputs.version }}
+      short_sha: ${{ steps.meta.outputs.short_sha }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Get version
+      - name: Get version and generate tag
         id: meta
         run: |
           VERSION=$(node -p "require('./package.json').version")
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          # Use version + short SHA for unique tags that always trigger new revisions
+          TAG="${VERSION}-${SHORT_SHA}"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Generated image tag: $TAG"
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
@@ -67,6 +75,7 @@ jobs:
           context: .
           push: true
           tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tag }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
 
@@ -83,10 +92,14 @@ jobs:
 
       - name: Deploy to Container App
         run: |
+          # Use the unique tag (version-sha) to force Azure to create a new revision
+          IMAGE_TAG="${{ needs.build-and-push.outputs.image_tag }}"
+          echo "Deploying image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${IMAGE_TAG}"
+
           az containerapp update \
             --name ${{ env.CONTAINER_APP_NAME }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --image ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.build-and-push.outputs.image_tag }}
+            --image ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${IMAGE_TAG}
 
       - name: Verify deployment
         run: |
@@ -102,6 +115,15 @@ jobs:
 
           echo "App URL: https://$APP_URL"
 
+          # Get latest revision info
+          LATEST_REVISION=$(az containerapp show \
+            --name ${{ env.CONTAINER_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --query "properties.latestRevisionName" \
+            --output tsv)
+
+          echo "Latest revision: $LATEST_REVISION"
+
           # Health check
           HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://$APP_URL/health")
 
@@ -111,6 +133,13 @@ jobs:
             echo "Health check failed with status: $HTTP_STATUS"
             exit 1
           fi
+
+          echo "### Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image:** ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.build-and-push.outputs.image_tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Revision:** ${LATEST_REVISION}" >> $GITHUB_STEP_SUMMARY
+          echo "- **URL:** https://${APP_URL}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Health:** Passed" >> $GITHUB_STEP_SUMMARY
 
   create-release:
     name: Create GitHub Release
@@ -127,7 +156,20 @@ jobs:
           VERSION=$(node -p "require('./package.json').version")
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
+      - name: Check if release exists
+        id: check_release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "v${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "Release v${{ steps.version.outputs.version }} already exists, skipping"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Create Release
+        if: steps.check_release.outputs.exists != 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.version.outputs.version }}
