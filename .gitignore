@@ -34,6 +34,7 @@ pids/
 status.json
 tickets.json
 warnings.json
+.last-shutdown.json
 
 # Coverage
 coverage/

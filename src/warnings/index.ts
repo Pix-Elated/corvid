@@ -2,7 +2,9 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 
-const WARNINGS_FILE = path.join(process.cwd(), 'warnings.json');
+// Use DATA_PATH env var for persistent storage, fallback to cwd
+const DATA_DIR = process.env.DATA_PATH || process.cwd();
+const WARNINGS_FILE = path.join(DATA_DIR, 'warnings.json');
 
 export interface Warning {
   moderatorId: string;

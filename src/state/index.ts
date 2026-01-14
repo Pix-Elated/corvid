@@ -3,7 +3,9 @@ import path from 'path';
 import os from 'os';
 import { StatusState, ServerStatus, MaintenanceInfo } from '../types';
 
-const STATE_FILE = path.join(process.cwd(), 'status.json');
+// Use DATA_PATH env var for persistent storage, fallback to cwd
+const DATA_DIR = process.env.DATA_PATH || process.cwd();
+const STATE_FILE = path.join(DATA_DIR, 'status.json');
 
 // Default state when no file exists
 const defaultState: StatusState = {

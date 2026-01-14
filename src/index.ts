@@ -12,6 +12,7 @@ import { handleInteractionCreate } from './discord/events/interactionCreate';
 import { handleGuildMemberAdd } from './discord/events/guildMemberAdd';
 import { handleGuildMemberRemove } from './discord/events/guildMemberRemove';
 import { createApiServer, startApiServer } from './api/server';
+import { recordShutdown, sendStartupMessage } from './discord/startup';
 
 let client: Client | null = null;
 
@@ -42,6 +43,7 @@ async function main(): Promise<void> {
   // Register event handlers
   client.once(Events.ClientReady, async (readyClient) => {
     await handleReady(readyClient);
+    await sendStartupMessage(readyClient);
   });
 
   // Handle messages (auto-mod + status parsing)
@@ -112,6 +114,7 @@ async function main(): Promise<void> {
     await client.login(config.discordBotToken);
   } catch (error) {
     console.error('[Main] Failed to login to Discord:', error);
+    recordShutdown('Failed to login to Discord', undefined, String(error));
     process.exit(1);
   }
 }
@@ -121,6 +124,10 @@ async function main(): Promise<void> {
  */
 async function shutdown(signal: string): Promise<void> {
   console.log(`[Main] Received ${signal}, shutting down gracefully...`);
+
+  // Record shutdown for next startup message
+  const reason = signal === 'SIGTERM' ? 'Graceful shutdown (deployment/restart)' : 'Graceful shutdown (manual)';
+  recordShutdown(reason, signal);
 
   if (client) {
     console.log('[Main] Destroying Discord client...');
@@ -138,6 +145,7 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 // Handle uncaught errors
 process.on('uncaughtException', (error) => {
   console.error('[Main] Uncaught exception:', error);
+  recordShutdown('Uncaught exception (crash)', undefined, String(error));
   // Only exit for truly fatal errors - let container orchestrator restart
   process.exit(1);
 });

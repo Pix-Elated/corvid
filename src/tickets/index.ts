@@ -3,7 +3,9 @@ import path from 'path';
 import os from 'os';
 import { Ticket, TicketState, TicketType } from '../types';
 
-const TICKETS_FILE = path.join(process.cwd(), 'tickets.json');
+// Use DATA_PATH env var for persistent storage, fallback to cwd
+const DATA_DIR = process.env.DATA_PATH || process.cwd();
+const TICKETS_FILE = path.join(DATA_DIR, 'tickets.json');
 
 // Default state when no file exists
 const defaultState: TicketState = {
