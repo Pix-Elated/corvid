@@ -8,9 +8,10 @@ export function createClient(): Client {
     intents: [
       GatewayIntentBits.Guilds,
       GatewayIntentBits.GuildMessages,
+      GatewayIntentBits.GuildMembers, // Required for role management
       GatewayIntentBits.MessageContent, // Privileged intent - must enable in Developer Portal
     ],
-    partials: [Partials.Channel, Partials.Message],
+    partials: [Partials.Channel, Partials.Message, Partials.GuildMember],
   });
 
   return client;

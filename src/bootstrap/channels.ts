@@ -4,8 +4,8 @@ import {
   Role,
   OverwriteResolvable,
   TextChannel,
-  NewsChannel,
   VoiceChannel,
+  DiscordAPIError,
 } from 'discord.js';
 import { ChannelConfig, CategoryConfig } from '../types';
 import { permissionsToBits } from './categories';
@@ -16,10 +16,24 @@ export interface ChannelCreationResult {
   errors: string[];
 }
 
-type CreatedChannel = TextChannel | NewsChannel | VoiceChannel;
+type CreatedChannel = TextChannel | VoiceChannel;
+
+const RATE_LIMIT_DELAY = 500;
+const MAX_RETRIES = 3;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableError(error: unknown): boolean {
+  if (error instanceof DiscordAPIError) {
+    return [429, 500, 502, 503, 504].includes(error.status);
+  }
+  return false;
+}
 
 /**
- * Build permission overwrites for a channel, merging category and channel-specific overwrites
+ * Build permission overwrites for a channel
  */
 function buildChannelPermissionOverwrites(
   guild: Guild,
@@ -39,6 +53,14 @@ function buildChannelPermissionOverwrites(
       const role = roleMap.get(overwrite.role);
       if (role) {
         targetId = role.id;
+      } else {
+        // Try case-insensitive match
+        const roleEntry = Array.from(roleMap.entries()).find(
+          ([name]) => name.toLowerCase() === overwrite.role.toLowerCase()
+        );
+        if (roleEntry) {
+          targetId = roleEntry[1].id;
+        }
       }
     }
 
@@ -58,7 +80,7 @@ function buildChannelPermissionOverwrites(
 }
 
 /**
- * Create channels within a category (idempotent)
+ * Create channels within a category (idempotent with retry logic)
  */
 export async function createChannelsInCategory(
   guild: Guild,
@@ -76,43 +98,85 @@ export async function createChannelsInCategory(
   const existingChannels = guild.channels.cache.filter((c) => c.parentId === category.id);
 
   for (const channelConfig of channelConfigs) {
-    try {
-      // Check if channel already exists in this category
-      const existingChannel = existingChannels.find(
-        (c) => c.name.toLowerCase() === channelConfig.name.toLowerCase()
-      );
+    let success = false;
+    let lastError: unknown = null;
 
-      if (existingChannel) {
-        console.log(
-          `[Channels] Channel "#${channelConfig.name}" already exists in "${category.name}", skipping`
+    for (let attempt = 1; attempt <= MAX_RETRIES && !success; attempt++) {
+      try {
+        // Check if channel already exists in this category
+        const existingChannel = existingChannels.find(
+          (c) => c.name.toLowerCase() === channelConfig.name.toLowerCase()
         );
-        result.skipped.push(`${category.name}/${channelConfig.name}`);
-        continue;
+
+        if (existingChannel) {
+          console.log(
+            `[Channels] Channel "#${channelConfig.name}" already exists in "${category.name}", skipping`
+          );
+          result.skipped.push(`${category.name}/${channelConfig.name}`);
+          success = true;
+          break;
+        }
+
+        // Build channel-specific permission overwrites
+        const permissionOverwrites = channelConfig.permissionOverwrites
+          ? buildChannelPermissionOverwrites(guild, roleMap, channelConfig.permissionOverwrites)
+          : undefined;
+
+        // Create the channel
+        console.log(
+          `[Channels] Creating channel "#${channelConfig.name}" in "${category.name}"${attempt > 1 ? ` (attempt ${attempt})` : ''}...`
+        );
+
+        const channel = (await guild.channels.create({
+          name: channelConfig.name,
+          type: channelConfig.type,
+          parent: category.id,
+          topic: channelConfig.topic,
+          permissionOverwrites,
+          reason: 'Server bootstrap - channel creation',
+        })) as CreatedChannel;
+
+        result.created.push(`${category.name}/${channel.name}`);
+        console.log(`[Channels] Created channel "#${channelConfig.name}" in "${category.name}"`);
+        success = true;
+
+        await sleep(RATE_LIMIT_DELAY);
+      } catch (error) {
+        lastError = error;
+
+        if (isRetryableError(error) && attempt < MAX_RETRIES) {
+          const retryDelay = RATE_LIMIT_DELAY * attempt * 2;
+          console.warn(
+            `[Channels] Retryable error for "#${channelConfig.name}", waiting ${retryDelay}ms before retry...`
+          );
+          await sleep(retryDelay);
+        } else if (error instanceof DiscordAPIError) {
+          if (error.code === 50013) {
+            const errorMessage = `Failed to create channel "#${channelConfig.name}" in "${category.name}": Missing Permissions`;
+            console.error(`[Channels] ${errorMessage}`);
+            result.errors.push(errorMessage);
+            break;
+          } else if (error.code === 50035) {
+            // Invalid Form Body - usually means bad channel type
+            const errorMessage = `Failed to create channel "#${channelConfig.name}" in "${category.name}": Invalid channel configuration (check channel type)`;
+            console.error(`[Channels] ${errorMessage}`);
+            result.errors.push(errorMessage);
+            break;
+          }
+        }
+
+        if (attempt === MAX_RETRIES) {
+          break;
+        }
       }
+    }
 
-      // Build channel-specific permission overwrites (if any)
-      const permissionOverwrites = channelConfig.permissionOverwrites
-        ? buildChannelPermissionOverwrites(guild, roleMap, channelConfig.permissionOverwrites)
-        : undefined;
-
-      // Create the channel
-      console.log(`[Channels] Creating channel "#${channelConfig.name}" in "${category.name}"...`);
-
-      const channel = (await guild.channels.create({
-        name: channelConfig.name,
-        type: channelConfig.type,
-        parent: category.id,
-        topic: channelConfig.topic,
-        permissionOverwrites,
-        reason: 'Server bootstrap - channel creation',
-      })) as CreatedChannel;
-
-      result.created.push(`${category.name}/${channel.name}`);
-      console.log(`[Channels] Created channel "#${channelConfig.name}" in "${category.name}"`);
-    } catch (error) {
-      const errorMessage = `Failed to create channel "#${channelConfig.name}" in "${category.name}": ${error}`;
-      console.error(`[Channels] ${errorMessage}`);
-      result.errors.push(errorMessage);
+    if (!success && lastError) {
+      const errorMessage = `Failed to create channel "#${channelConfig.name}" in "${category.name}": ${lastError}`;
+      if (!result.errors.some((e) => e.includes(channelConfig.name))) {
+        console.error(`[Channels] ${errorMessage}`);
+        result.errors.push(errorMessage);
+      }
     }
   }
 
@@ -138,8 +202,26 @@ export async function createAllChannels(
     const category = categoryMap.get(categoryConfig.name);
 
     if (!category) {
-      const errorMessage = `Category "${categoryConfig.name}" not found, cannot create channels`;
-      console.error(`[Channels] ${errorMessage}`);
+      // Try case-insensitive match
+      const categoryEntry = Array.from(categoryMap.entries()).find(
+        ([name]) => name.toUpperCase() === categoryConfig.name.toUpperCase()
+      );
+
+      if (categoryEntry) {
+        const channelResult = await createChannelsInCategory(
+          guild,
+          categoryEntry[1],
+          categoryConfig.channels,
+          roleMap
+        );
+        result.created.push(...channelResult.created);
+        result.skipped.push(...channelResult.skipped);
+        result.errors.push(...channelResult.errors);
+        continue;
+      }
+
+      const errorMessage = `Category "${categoryConfig.name}" not found, cannot create channels. Continuing with other categories...`;
+      console.warn(`[Channels] ${errorMessage}`);
       result.errors.push(errorMessage);
       continue;
     }

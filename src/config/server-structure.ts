@@ -1,7 +1,7 @@
 import { PermissionFlagsBits, ChannelType } from 'discord.js';
 import { ServerStructure } from '../types';
 
-// Default server structure following best practices for app support communities
+// Bulletproof server structure with security best practices
 export const defaultServerStructure: ServerStructure = {
   roles: [
     {
@@ -18,8 +18,14 @@ export const defaultServerStructure: ServerStructure = {
         PermissionFlagsBits.ManageMessages |
         PermissionFlagsBits.KickMembers |
         PermissionFlagsBits.BanMembers |
+        PermissionFlagsBits.ModerateMembers |
         PermissionFlagsBits.ViewAuditLog |
-        PermissionFlagsBits.MentionEveryone,
+        PermissionFlagsBits.MentionEveryone |
+        PermissionFlagsBits.ManageNicknames |
+        PermissionFlagsBits.ManageWebhooks |
+        PermissionFlagsBits.MoveMembers |
+        PermissionFlagsBits.MuteMembers |
+        PermissionFlagsBits.DeafenMembers,
     },
     {
       name: 'Moderator',
@@ -31,18 +37,22 @@ export const defaultServerStructure: ServerStructure = {
         PermissionFlagsBits.SendMessages |
         PermissionFlagsBits.ManageMessages |
         PermissionFlagsBits.KickMembers |
+        PermissionFlagsBits.ModerateMembers | // Timeouts
         PermissionFlagsBits.MuteMembers |
-        PermissionFlagsBits.ViewAuditLog,
+        PermissionFlagsBits.MoveMembers |
+        PermissionFlagsBits.ViewAuditLog |
+        PermissionFlagsBits.ManageNicknames,
     },
     {
       name: 'Support Team',
       color: 0x2ecc71, // Green
       hoist: true,
-      mentionable: true,
+      mentionable: false, // Prevent ping abuse
       permissions:
         PermissionFlagsBits.ViewChannel |
         PermissionFlagsBits.SendMessages |
-        PermissionFlagsBits.ReadMessageHistory,
+        PermissionFlagsBits.ReadMessageHistory |
+        PermissionFlagsBits.ManageMessages,
     },
     {
       name: 'Verified',
@@ -55,7 +65,40 @@ export const defaultServerStructure: ServerStructure = {
         PermissionFlagsBits.ReadMessageHistory |
         PermissionFlagsBits.AddReactions |
         PermissionFlagsBits.AttachFiles |
-        PermissionFlagsBits.EmbedLinks,
+        PermissionFlagsBits.EmbedLinks |
+        PermissionFlagsBits.Connect |
+        PermissionFlagsBits.Speak |
+        PermissionFlagsBits.UseVAD,
+    },
+    {
+      name: 'Orthodox Warriors',
+      color: 0xf1c40f, // Gold
+      hoist: true,
+      mentionable: true,
+      permissions:
+        PermissionFlagsBits.ViewChannel |
+        PermissionFlagsBits.SendMessages |
+        PermissionFlagsBits.ReadMessageHistory |
+        PermissionFlagsBits.AddReactions |
+        PermissionFlagsBits.AttachFiles |
+        PermissionFlagsBits.EmbedLinks |
+        PermissionFlagsBits.Connect |
+        PermissionFlagsBits.Speak |
+        PermissionFlagsBits.UseVAD,
+    },
+    {
+      name: 'Muted',
+      color: 0x2c3e50, // Dark gray
+      hoist: false,
+      mentionable: false,
+      permissions: PermissionFlagsBits.ReadMessageHistory,
+    },
+    {
+      name: 'Quarantine',
+      color: 0xe67e22, // Orange
+      hoist: false,
+      mentionable: false,
+      permissions: 0n, // No permissions at all
     },
     {
       name: 'Unverified',
@@ -68,12 +111,61 @@ export const defaultServerStructure: ServerStructure = {
 
   categories: [
     {
+      name: 'VERIFICATION',
+      permissionOverwrites: [
+        {
+          role: '@everyone',
+          deny: ['ViewChannel'],
+        },
+        {
+          role: 'Unverified',
+          allow: ['ViewChannel', 'ReadMessageHistory'],
+          deny: ['SendMessages', 'AddReactions'],
+        },
+        {
+          role: 'Verified',
+          deny: ['ViewChannel'], // Hide after verification
+        },
+        {
+          role: 'Quarantine',
+          deny: ['ViewChannel'],
+        },
+      ],
+      channels: [
+        {
+          name: 'verify-here',
+          type: ChannelType.GuildText,
+          topic: 'Click the button below to verify and gain access to the server.',
+          permissionOverwrites: [
+            {
+              role: 'Unverified',
+              allow: ['ViewChannel', 'ReadMessageHistory'],
+              deny: ['SendMessages', 'AddReactions'],
+            },
+          ],
+        },
+      ],
+    },
+    {
       name: 'INFORMATION',
       permissionOverwrites: [
         {
           role: '@everyone',
-          deny: ['SendMessages'],
+          deny: [
+            'SendMessages',
+            'AddReactions',
+            'CreatePublicThreads',
+            'CreatePrivateThreads',
+          ],
           allow: ['ViewChannel', 'ReadMessageHistory'],
+        },
+        {
+          role: 'Quarantine',
+          deny: ['ViewChannel'],
+        },
+        {
+          role: 'Muted',
+          deny: ['SendMessages', 'AddReactions'],
         },
       ],
       channels: [
@@ -89,7 +181,7 @@ export const defaultServerStructure: ServerStructure = {
         },
         {
           name: 'announcements',
-          type: ChannelType.GuildAnnouncement,
+          type: ChannelType.GuildText,
           topic: 'Official announcements from the team.',
         },
         {
@@ -109,6 +201,14 @@ export const defaultServerStructure: ServerStructure = {
         {
           role: 'Unverified',
           deny: ['ViewChannel'],
+        },
+        {
+          role: 'Quarantine',
+          deny: ['ViewChannel'],
+        },
+        {
+          role: 'Muted',
+          deny: ['SendMessages', 'AddReactions', 'CreatePublicThreads'],
         },
         {
           role: 'Verified',
@@ -169,6 +269,14 @@ export const defaultServerStructure: ServerStructure = {
           deny: ['ViewChannel'],
         },
         {
+          role: 'Quarantine',
+          deny: ['ViewChannel'],
+        },
+        {
+          role: 'Muted',
+          deny: ['SendMessages', 'AddReactions', 'CreatePublicThreads'],
+        },
+        {
           role: 'Verified',
           allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'],
         },
@@ -204,6 +312,121 @@ export const defaultServerStructure: ServerStructure = {
       ],
     },
     {
+      name: 'ORTHODOX WARRIORS',
+      permissionOverwrites: [
+        {
+          role: '@everyone',
+          deny: ['ViewChannel'],
+        },
+        {
+          role: 'Quarantine',
+          deny: ['ViewChannel'],
+        },
+        {
+          role: 'Muted',
+          deny: ['SendMessages', 'AddReactions', 'Connect', 'Speak'],
+        },
+        {
+          role: 'Orthodox Warriors',
+          allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory', 'AttachFiles', 'EmbedLinks'],
+        },
+        {
+          role: 'Support Team',
+          allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'],
+        },
+        {
+          role: 'Moderator',
+          allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory', 'ManageMessages'],
+        },
+        {
+          role: 'Admin',
+          allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory', 'ManageMessages'],
+        },
+      ],
+      channels: [
+        {
+          name: 'guild-chat',
+          type: ChannelType.GuildText,
+          topic: 'Orthodox Warriors guild discussion.',
+        },
+        {
+          name: 'guild-events',
+          type: ChannelType.GuildText,
+          topic: 'Guild events, raids, and scheduled activities.',
+        },
+        {
+          name: 'guild-roster',
+          type: ChannelType.GuildText,
+          topic: 'Guild member roster and recruitment.',
+        },
+      ],
+    },
+    {
+      name: 'VOICE',
+      permissionOverwrites: [
+        {
+          role: '@everyone',
+          deny: ['ViewChannel', 'Connect'],
+        },
+        {
+          role: 'Unverified',
+          deny: ['ViewChannel', 'Connect'],
+        },
+        {
+          role: 'Quarantine',
+          deny: ['ViewChannel', 'Connect'],
+        },
+        {
+          role: 'Muted',
+          deny: ['Connect', 'Speak'],
+        },
+        {
+          role: 'Verified',
+          allow: ['ViewChannel', 'Connect', 'Speak'],
+        },
+        {
+          role: 'Orthodox Warriors',
+          allow: ['ViewChannel', 'Connect', 'Speak'],
+        },
+        {
+          role: 'Moderator',
+          allow: ['ViewChannel', 'Connect', 'Speak', 'MuteMembers', 'MoveMembers'],
+        },
+        {
+          role: 'Admin',
+          allow: ['ViewChannel', 'Connect', 'Speak', 'MuteMembers', 'MoveMembers', 'DeafenMembers'],
+        },
+      ],
+      channels: [
+        {
+          name: 'General Voice',
+          type: ChannelType.GuildVoice,
+        },
+        {
+          name: 'Gaming',
+          type: ChannelType.GuildVoice,
+        },
+        {
+          name: 'Guild Voice',
+          type: ChannelType.GuildVoice,
+          permissionOverwrites: [
+            {
+              role: 'Verified',
+              deny: ['Connect'],
+            },
+            {
+              role: 'Orthodox Warriors',
+              allow: ['ViewChannel', 'Connect', 'Speak'],
+            },
+          ],
+        },
+        {
+          name: 'AFK',
+          type: ChannelType.GuildVoice,
+        },
+      ],
+    },
+    {
       name: 'STAFF ONLY',
       permissionOverwrites: [
         {
@@ -216,6 +439,10 @@ export const defaultServerStructure: ServerStructure = {
         },
         {
           role: 'Verified',
+          deny: ['ViewChannel'],
+        },
+        {
+          role: 'Quarantine',
           deny: ['ViewChannel'],
         },
         {
@@ -265,12 +492,16 @@ export const defaultServerStructure: ServerStructure = {
           deny: ['ViewChannel'],
         },
         {
+          role: 'Quarantine',
+          deny: ['ViewChannel'],
+        },
+        {
           role: 'Support Team',
           deny: ['ViewChannel'],
         },
         {
           role: 'Moderator',
-          deny: ['ViewChannel'],
+          allow: ['ViewChannel', 'ReadMessageHistory'], // Mods can see bot logs
         },
         {
           role: 'Admin',
@@ -286,7 +517,7 @@ export const defaultServerStructure: ServerStructure = {
         {
           name: 'server-status',
           type: ChannelType.GuildText,
-          topic: 'Munk server status messages are mirrored here.',
+          topic: 'Server status messages.',
         },
       ],
     },
