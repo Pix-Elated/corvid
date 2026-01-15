@@ -10,20 +10,9 @@ import { getCardMessageId, setCardMessageId } from '../info-cards';
 
 interface EmbedPostResult {
   posted: string[];
+  updated: string[];
   skipped: string[];
   errors: string[];
-}
-
-/**
- * Check if a channel is empty (no messages)
- */
-async function isChannelEmpty(channel: TextChannel): Promise<boolean> {
-  try {
-    const messages = await channel.messages.fetch({ limit: 1 });
-    return messages.size === 0;
-  } catch {
-    return true;
-  }
 }
 
 /**
@@ -305,12 +294,13 @@ const EMBED_CONFIGS: EmbedConfig[] = [
 ];
 
 /**
- * Post all embeds to their respective channels
- * Only posts if channel is empty (idempotent)
+ * Post or update all embeds in their respective channels
+ * Tracks message IDs to update existing embeds on subsequent runs
  */
 export async function postBootstrapEmbeds(guild: Guild): Promise<EmbedPostResult> {
   const result: EmbedPostResult = {
     posted: [],
+    updated: [],
     skipped: [],
     errors: [],
   };
@@ -322,12 +312,24 @@ export async function postBootstrapEmbeds(guild: Guild): Promise<EmbedPostResult
     ) as TextChannel | undefined;
 
     if (verifyChannel) {
-      if (await isChannelEmpty(verifyChannel)) {
-        const { embed, row } = getVerificationEmbed(guild);
-        await verifyChannel.send({ embeds: [embed], components: [row] });
-        result.posted.push('verify-here');
+      const { embed, row } = getVerificationEmbed(guild);
+      const existingId = getCardMessageId('verify-here');
+
+      if (existingId) {
+        try {
+          const existingMessage = await verifyChannel.messages.fetch(existingId);
+          await existingMessage.edit({ embeds: [embed], components: [row] });
+          result.updated.push('verify-here');
+        } catch {
+          // Message was deleted, post new one
+          const message = await verifyChannel.send({ embeds: [embed], components: [row] });
+          setCardMessageId('verify-here', message.id);
+          result.posted.push('verify-here');
+        }
       } else {
-        result.skipped.push('verify-here (has content)');
+        const message = await verifyChannel.send({ embeds: [embed], components: [row] });
+        setCardMessageId('verify-here', message.id);
+        result.posted.push('verify-here');
       }
     }
   } catch (error) {
@@ -341,12 +343,24 @@ export async function postBootstrapEmbeds(guild: Guild): Promise<EmbedPostResult
     ) as TextChannel | undefined;
 
     if (supportChannel) {
-      if (await isChannelEmpty(supportChannel)) {
-        const { embed, row } = getSupportGeneralPanel();
-        await supportChannel.send({ embeds: [embed], components: [row] });
-        result.posted.push('support-general');
+      const { embed, row } = getSupportGeneralPanel();
+      const existingId = getCardMessageId('support-general');
+
+      if (existingId) {
+        try {
+          const existingMessage = await supportChannel.messages.fetch(existingId);
+          await existingMessage.edit({ embeds: [embed], components: [row] });
+          result.updated.push('support-general');
+        } catch {
+          // Message was deleted, post new one
+          const message = await supportChannel.send({ embeds: [embed], components: [row] });
+          setCardMessageId('support-general', message.id);
+          result.posted.push('support-general');
+        }
       } else {
-        result.skipped.push('support-general (has content)');
+        const message = await supportChannel.send({ embeds: [embed], components: [row] });
+        setCardMessageId('support-general', message.id);
+        result.posted.push('support-general');
       }
     }
   } catch (error) {
@@ -360,12 +374,24 @@ export async function postBootstrapEmbeds(guild: Guild): Promise<EmbedPostResult
     ) as TextChannel | undefined;
 
     if (bugChannel) {
-      if (await isChannelEmpty(bugChannel)) {
-        const { embed, row } = getBugReportsPanel();
-        await bugChannel.send({ embeds: [embed], components: [row] });
-        result.posted.push('bug-reports');
+      const { embed, row } = getBugReportsPanel();
+      const existingId = getCardMessageId('bug-reports');
+
+      if (existingId) {
+        try {
+          const existingMessage = await bugChannel.messages.fetch(existingId);
+          await existingMessage.edit({ embeds: [embed], components: [row] });
+          result.updated.push('bug-reports');
+        } catch {
+          // Message was deleted, post new one
+          const message = await bugChannel.send({ embeds: [embed], components: [row] });
+          setCardMessageId('bug-reports', message.id);
+          result.posted.push('bug-reports');
+        }
       } else {
-        result.skipped.push('bug-reports (has content)');
+        const message = await bugChannel.send({ embeds: [embed], components: [row] });
+        setCardMessageId('bug-reports', message.id);
+        result.posted.push('bug-reports');
       }
     }
   } catch (error) {
@@ -379,12 +405,24 @@ export async function postBootstrapEmbeds(guild: Guild): Promise<EmbedPostResult
     ) as TextChannel | undefined;
 
     if (featureChannel) {
-      if (await isChannelEmpty(featureChannel)) {
-        const { embed, row } = getFeatureRequestsPanel();
-        await featureChannel.send({ embeds: [embed], components: [row] });
-        result.posted.push('feature-requests');
+      const { embed, row } = getFeatureRequestsPanel();
+      const existingId = getCardMessageId('feature-requests');
+
+      if (existingId) {
+        try {
+          const existingMessage = await featureChannel.messages.fetch(existingId);
+          await existingMessage.edit({ embeds: [embed], components: [row] });
+          result.updated.push('feature-requests');
+        } catch {
+          // Message was deleted, post new one
+          const message = await featureChannel.send({ embeds: [embed], components: [row] });
+          setCardMessageId('feature-requests', message.id);
+          result.posted.push('feature-requests');
+        }
       } else {
-        result.skipped.push('feature-requests (has content)');
+        const message = await featureChannel.send({ embeds: [embed], components: [row] });
+        setCardMessageId('feature-requests', message.id);
+        result.posted.push('feature-requests');
       }
     }
   } catch (error) {
@@ -402,25 +440,20 @@ export async function postBootstrapEmbeds(guild: Guild): Promise<EmbedPostResult
         continue;
       }
 
-      // Check if we already have a card tracked
+      const embed = config.getEmbed(guild);
       const existingId = getCardMessageId(config.channelName);
+
       if (existingId) {
         try {
-          await channel.messages.fetch(existingId);
-          result.skipped.push(`${config.channelName} (has card)`);
+          const existingMessage = await channel.messages.fetch(existingId);
+          await existingMessage.edit({ embeds: [embed] });
+          result.updated.push(config.channelName);
           continue;
         } catch {
-          // Card was deleted, we can post a new one
+          // Card was deleted, post a new one
         }
       }
 
-      // Check if channel is empty
-      if (!(await isChannelEmpty(channel))) {
-        result.skipped.push(`${config.channelName} (has content)`);
-        continue;
-      }
-
-      const embed = config.getEmbed(guild);
       const message = await channel.send({ embeds: [embed] });
       setCardMessageId(config.channelName, message.id);
       result.posted.push(config.channelName);
@@ -429,7 +462,9 @@ export async function postBootstrapEmbeds(guild: Guild): Promise<EmbedPostResult
     }
   }
 
-  console.log(`[Embeds] Posted ${result.posted.length} embeds, skipped ${result.skipped.length}`);
+  console.log(
+    `[Embeds] Posted ${result.posted.length}, updated ${result.updated.length}, skipped ${result.skipped.length}`
+  );
 
   return result;
 }
