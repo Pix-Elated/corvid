@@ -41,6 +41,11 @@ function isTicketChannel(channelName: string): boolean {
 }
 
 /**
+ * Categories where all channels are user-managed (don't delete any)
+ */
+const USER_MANAGED_CATEGORIES = new Set(['EXTERNAL ANNOUNCEMENTS']);
+
+/**
  * Cleanup channels and categories not defined in the server structure
  */
 export async function cleanupUnmanagedChannels(
@@ -84,6 +89,11 @@ export async function cleanupUnmanagedChannels(
       // Case 2: Channel is in a managed category
       const parentName = parent.name.toUpperCase();
       if (categoryNames.has(parentName)) {
+        // Skip user-managed categories (e.g., EXTERNAL ANNOUNCEMENTS for followed channels)
+        if (USER_MANAGED_CATEGORIES.has(parentName)) {
+          continue;
+        }
+
         // Get allowed channels for this category
         const allowedChannels = categoryChannelMap.get(parentName) || new Set();
 
