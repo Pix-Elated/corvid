@@ -88,6 +88,8 @@ export interface BootstrapResult {
   channelsSkipped: string[];
   channelsDeleted: string[];
   categoriesDeleted: string[];
+  embedsPosted: string[];
+  embedsSkipped: string[];
   errors: string[];
 }
 

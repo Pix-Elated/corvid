@@ -11,12 +11,14 @@ import {
   ChannelType,
   PermissionFlagsBits,
   GuildMember,
+  TextChannel,
 } from 'discord.js';
 import { createTicket, getTicketByChannelId } from '../../tickets';
 import { manualCloseTicket } from '../../tickets/autoclose';
 import { TicketType } from '../../types';
 
-const TICKET_CATEGORY_NAME = 'TICKETS';
+// Support tickets spawn under SUPPORT category
+const SUPPORT_CATEGORY_NAME = 'SUPPORT';
 
 /**
  * Handle ticket creation button clicks
@@ -116,43 +118,146 @@ export async function handleTicketModal(interaction: ModalSubmitInteraction): Pr
 
   await interaction.deferReply({ ephemeral: true });
 
-  try {
-    // Find TICKETS category
-    const category = interaction.guild.channels.cache.find(
-      (ch) =>
-        ch.type === ChannelType.GuildCategory && ch.name.toUpperCase() === TICKET_CATEGORY_NAME
-    );
+  // Route based on ticket type
+  if (ticketType === 'feature' || ticketType === 'bug') {
+    await handlePublicCard(interaction, ticketType, subject, description, priority);
+  } else {
+    await handlePrivateTicket(interaction, ticketType, subject, description);
+  }
+}
 
-    if (!category) {
-      await interaction.editReply({
-        content: 'Ticket category not found. Please run /setup first.',
+/**
+ * Handle feature requests and bug reports - post public card with thread
+ */
+async function handlePublicCard(
+  interaction: ModalSubmitInteraction,
+  ticketType: 'feature' | 'bug',
+  subject: string,
+  description: string,
+  priority?: 'low' | 'medium' | 'high' | 'critical'
+): Promise<void> {
+  const guild = interaction.guild!;
+
+  // Find the target channel
+  const channelName = ticketType === 'feature' ? 'feature-requests' : 'bug-reports';
+  const targetChannel = guild.channels.cache.find(
+    (ch) => ch.name === channelName && ch instanceof TextChannel
+  ) as TextChannel | undefined;
+
+  if (!targetChannel) {
+    await interaction.editReply({
+      content: `Channel #${channelName} not found. Please run /setup first.`,
+    });
+    return;
+  }
+
+  try {
+    // Build the card embed
+    const isFeature = ticketType === 'feature';
+    const embed = new EmbedBuilder()
+      .setTitle(`${isFeature ? '🚀' : '🐛'} ${subject}`)
+      .setDescription(description)
+      .setColor(isFeature ? 0x2ecc71 : 0xe74c3c)
+      .addFields({ name: 'Submitted by', value: `<@${interaction.user.id}>`, inline: true })
+      .setTimestamp();
+
+    if (ticketType === 'bug' && priority) {
+      const priorityColors: Record<string, string> = {
+        critical: '🔴',
+        high: '🟠',
+        medium: '🟡',
+        low: '🟢',
+      };
+      embed.addFields({
+        name: 'Priority',
+        value: `${priorityColors[priority] || '⚪'} ${priority.toUpperCase()}`,
+        inline: true,
       });
-      return;
     }
 
+    embed.setFooter({ text: 'React with 👍 to support • Reply in thread' });
+
+    // Post the card
+    const message = await targetChannel.send({ embeds: [embed] });
+
+    // Add voting reaction
+    await message.react('👍');
+
+    // Create a thread for discussion
+    const threadName = subject.substring(0, 100);
+    const thread = await message.startThread({
+      name: threadName,
+      autoArchiveDuration: 4320, // 3 days
+    });
+
+    // Post initial message in thread
+    await thread.send({
+      content:
+        `<@${interaction.user.id}> started this ${isFeature ? 'feature request' : 'bug report'}.\n\n` +
+        `Feel free to discuss, ask questions, or add more details here!`,
+    });
+
+    await interaction.editReply({
+      content: `Your ${isFeature ? 'feature request' : 'bug report'} has been posted: ${message.url}`,
+    });
+
+    console.log(
+      `[Support] ${ticketType} posted in #${channelName} by ${interaction.user.tag}: ${subject}`
+    );
+  } catch (error) {
+    console.error(`[Support] Error posting ${ticketType}:`, error);
+    await interaction.editReply({
+      content: 'Failed to post. Please try again or contact an administrator.',
+    });
+  }
+}
+
+/**
+ * Handle general support - create private ticket channel
+ */
+async function handlePrivateTicket(
+  interaction: ModalSubmitInteraction,
+  ticketType: TicketType,
+  subject: string,
+  description: string
+): Promise<void> {
+  const guild = interaction.guild!;
+
+  // Find SUPPORT category
+  const category = guild.channels.cache.find(
+    (ch) => ch.type === ChannelType.GuildCategory && ch.name.toUpperCase() === SUPPORT_CATEGORY_NAME
+  );
+
+  if (!category) {
+    await interaction.editReply({
+      content: 'Support category not found. Please run /setup first.',
+    });
+    return;
+  }
+
+  try {
     // Create the ticket in state first to get the ID
     const tempTicket = createTicket(
-      'pending', // Will update after channel creation
+      'pending',
       interaction.user.id,
       ticketType,
       subject,
-      description,
-      priority
+      description
     );
 
     // Create the channel name
     const username = interaction.user.username.toLowerCase().replace(/[^a-z0-9]/g, '');
     const channelName = `${tempTicket.id}-${username}`.substring(0, 100);
 
-    // Create the private channel
-    const channel = await interaction.guild.channels.create({
+    // Create the private channel under SUPPORT
+    const channel = await guild.channels.create({
       name: channelName,
       type: ChannelType.GuildText,
       parent: category.id,
-      topic: `${ticketType.charAt(0).toUpperCase() + ticketType.slice(1)} ticket: ${subject}`,
+      topic: `Support ticket: ${subject}`,
       permissionOverwrites: [
         {
-          id: interaction.guild.id, // @everyone
+          id: guild.id, // @everyone
           deny: [PermissionFlagsBits.ViewChannel],
         },
         {
@@ -175,38 +280,24 @@ export async function handleTicketModal(interaction: ModalSubmitInteraction): Pr
       interaction.user.id,
       ticketType,
       subject,
-      description,
-      priority
+      description
     );
-
-    // Type emoji and color based on ticket type
-    const typeConfig = {
-      feature: { emoji: '🚀', color: 0x2ecc71, label: 'Feature Request' },
-      bug: { emoji: '🐛', color: 0xe74c3c, label: 'Bug Report' },
-      support: { emoji: '💬', color: 0x3498db, label: 'General Support' },
-    };
-    const config = typeConfig[ticketType];
 
     // Build welcome embed
     const welcomeEmbed = new EmbedBuilder()
-      .setTitle(`${config.emoji} ${config.label}`)
+      .setTitle('💬 General Support')
       .setDescription(
-        `Thank you for creating a ticket!\n\n` +
+        `Thank you for creating a support ticket!\n\n` +
           `Our team will be with you shortly. In the meantime, please provide any additional information that might help us assist you.`
       )
       .addFields(
         { name: 'Ticket ID', value: ticket.id, inline: true },
         { name: 'Created by', value: `<@${interaction.user.id}>`, inline: true },
-        { name: 'Subject', value: subject }
+        { name: 'Subject', value: subject },
+        { name: 'Description', value: description }
       )
-      .setColor(config.color)
+      .setColor(0x3498db)
       .setTimestamp();
-
-    if (ticketType === 'bug' && priority) {
-      welcomeEmbed.addFields({ name: 'Priority', value: priority.toUpperCase(), inline: true });
-    }
-
-    welcomeEmbed.addFields({ name: 'Description', value: description });
 
     // Close button
     const closeRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
@@ -224,10 +315,10 @@ export async function handleTicketModal(interaction: ModalSubmitInteraction): Pr
     });
 
     await interaction.editReply({
-      content: `Your ticket has been created: ${channel}`,
+      content: `Your support ticket has been created: ${channel}`,
     });
 
-    console.log(`[Tickets] Created ticket ${ticket.id} (${ticketType}) by ${interaction.user.tag}`);
+    console.log(`[Tickets] Created ticket ${ticket.id} by ${interaction.user.tag}`);
   } catch (error) {
     console.error('[Tickets] Error creating ticket:', error);
     await interaction.editReply({
