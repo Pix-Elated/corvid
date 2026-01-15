@@ -78,10 +78,17 @@ export const setupCommand = {
       }
 
       // Embeds summary
-      if (result.embedsPosted.length > 0 || result.embedsSkipped.length > 0) {
+      if (
+        result.embedsPosted.length > 0 ||
+        result.embedsUpdated.length > 0 ||
+        result.embedsSkipped.length > 0
+      ) {
         lines.push('\n**Embeds:**');
         if (result.embedsPosted.length > 0) {
           lines.push(`  Posted: ${result.embedsPosted.join(', ')}`);
+        }
+        if (result.embedsUpdated.length > 0) {
+          lines.push(`  Updated: ${result.embedsUpdated.join(', ')}`);
         }
         if (result.embedsSkipped.length > 0) {
           lines.push(`  Skipped: ${result.embedsSkipped.join(', ')}`);
