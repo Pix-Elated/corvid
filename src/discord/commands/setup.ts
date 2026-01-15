@@ -77,6 +77,17 @@ export const setupCommand = {
         }
       }
 
+      // Embeds summary
+      if (result.embedsPosted.length > 0 || result.embedsSkipped.length > 0) {
+        lines.push('\n**Embeds:**');
+        if (result.embedsPosted.length > 0) {
+          lines.push(`  Posted: ${result.embedsPosted.join(', ')}`);
+        }
+        if (result.embedsSkipped.length > 0) {
+          lines.push(`  Skipped: ${result.embedsSkipped.join(', ')}`);
+        }
+      }
+
       // Errors
       if (result.errors.length > 0) {
         lines.push('\n**Errors:**');

@@ -9,22 +9,27 @@ interface CleanupResult {
 
 /**
  * Get all managed channel and category names from the server structure
+ * Returns a map of category name -> allowed channel names
  */
-function getManagedNames(categories: CategoryConfig[]): {
+function getManagedStructure(categories: CategoryConfig[]): {
   categoryNames: Set<string>;
-  channelNames: Set<string>;
+  categoryChannelMap: Map<string, Set<string>>;
 } {
   const categoryNames = new Set<string>();
-  const channelNames = new Set<string>();
+  const categoryChannelMap = new Map<string, Set<string>>();
 
   for (const category of categories) {
-    categoryNames.add(category.name.toUpperCase());
+    const catName = category.name.toUpperCase();
+    categoryNames.add(catName);
+
+    const channelSet = new Set<string>();
     for (const channel of category.channels) {
-      channelNames.add(channel.name.toLowerCase());
+      channelSet.add(channel.name.toLowerCase());
     }
+    categoryChannelMap.set(catName, channelSet);
   }
 
-  return { categoryNames, channelNames };
+  return { categoryNames, categoryChannelMap };
 }
 
 /**
@@ -47,12 +52,12 @@ export async function cleanupUnmanagedChannels(
     errors: [],
   };
 
-  const { categoryNames, channelNames } = getManagedNames(categories);
+  const { categoryNames, categoryChannelMap } = getManagedStructure(categories);
 
   // Get all channels in the guild
   const allChannels = guild.channels.cache;
 
-  // Find and delete unmanaged text/voice channels (not in any category or in unmanaged category)
+  // Find and delete channels not in the structure
   for (const [, channel] of allChannels) {
     try {
       // Skip categories for now (handle separately)
@@ -65,30 +70,34 @@ export async function cleanupUnmanagedChannels(
         continue;
       }
 
-      // Check if channel is in a managed category
       const parent = channel.parent;
 
-      if (parent) {
-        // Channel has a parent category - check if the category is managed
-        if (categoryNames.has(parent.name.toUpperCase())) {
-          // Category is managed, check if this specific channel is in the structure
-          if (!channelNames.has(channel.name.toLowerCase())) {
-            // Channel is not in the structure - but only delete if it's in a managed category
-            // This prevents deleting channels that were intentionally added
-            console.log(
-              `[Cleanup] Skipping channel "${channel.name}" in managed category (may be intentional)`
-            );
-          }
-          continue;
-        }
-      }
-
-      // Channel has no parent (orphaned at top level) - delete it
+      // Case 1: Channel has no parent (orphaned at top level) - delete it
       if (!parent) {
         console.log(`[Cleanup] Deleting orphaned channel: ${channel.name}`);
         await channel.delete('Cleanup: Channel not in managed server structure');
         result.channelsDeleted.push(channel.name);
+        continue;
       }
+
+      // Case 2: Channel is in a managed category
+      const parentName = parent.name.toUpperCase();
+      if (categoryNames.has(parentName)) {
+        // Get allowed channels for this category
+        const allowedChannels = categoryChannelMap.get(parentName) || new Set();
+
+        // If channel is not in the allowed list, delete it
+        if (!allowedChannels.has(channel.name.toLowerCase())) {
+          console.log(
+            `[Cleanup] Deleting unmanaged channel "${channel.name}" from category "${parent.name}"`
+          );
+          await channel.delete('Cleanup: Channel not in managed server structure');
+          result.channelsDeleted.push(channel.name);
+        }
+        continue;
+      }
+
+      // Case 3: Channel is in an unmanaged category - leave it alone (will be handled with category)
     } catch (error) {
       const errorMsg = `Failed to delete channel "${channel.name}": ${error}`;
       console.error(`[Cleanup] ${errorMsg}`);
@@ -96,8 +105,12 @@ export async function cleanupUnmanagedChannels(
     }
   }
 
-  // Find and delete unmanaged categories (empty ones that aren't in structure)
-  for (const [, channel] of allChannels) {
+  // Refresh channel cache after deletions
+  await guild.channels.fetch();
+  const refreshedChannels = guild.channels.cache;
+
+  // Find and delete unmanaged categories
+  for (const [, channel] of refreshedChannels) {
     try {
       if (channel.type !== ChannelType.GuildCategory) {
         continue;
@@ -105,12 +118,12 @@ export async function cleanupUnmanagedChannels(
 
       // Check if this category is in our managed structure
       if (!categoryNames.has(channel.name.toUpperCase())) {
-        // Check if category is empty
-        const childCount = allChannels.filter((c) => c.parentId === channel.id).size;
+        // Check if category is empty (or only has channels we'll delete)
+        const childCount = refreshedChannels.filter((c) => c.parentId === channel.id).size;
 
         if (childCount === 0) {
-          console.log(`[Cleanup] Deleting empty unmanaged category: ${channel.name}`);
-          await channel.delete('Cleanup: Empty category not in managed server structure');
+          console.log(`[Cleanup] Deleting unmanaged category: ${channel.name}`);
+          await channel.delete('Cleanup: Category not in managed server structure');
           result.categoriesDeleted.push(channel.name);
         } else {
           console.log(

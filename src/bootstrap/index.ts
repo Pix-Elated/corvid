@@ -5,6 +5,7 @@ import { createRoles } from './roles';
 import { createCategories } from './categories';
 import { createAllChannels } from './channels';
 import { cleanupUnmanagedChannels } from './cleanup';
+import { postBootstrapEmbeds } from './embeds';
 
 /**
  * Bootstrap a Discord server with roles, categories, and channels
@@ -23,6 +24,8 @@ export async function bootstrapServer(guild: Guild): Promise<BootstrapResult> {
     channelsSkipped: [],
     channelsDeleted: [],
     categoriesDeleted: [],
+    embedsPosted: [],
+    embedsSkipped: [],
     errors: [],
   };
 
@@ -64,6 +67,13 @@ export async function bootstrapServer(guild: Guild): Promise<BootstrapResult> {
     result.categoriesDeleted = cleanupResult.categoriesDeleted;
     result.errors.push(...cleanupResult.errors);
 
+    // Step 5: Post embeds (verification, tickets, info cards)
+    console.log('[Bootstrap] Step 5: Posting embeds...');
+    const embedResult = await postBootstrapEmbeds(guild);
+    result.embedsPosted = embedResult.posted;
+    result.embedsSkipped = embedResult.skipped;
+    result.errors.push(...embedResult.errors);
+
     // Mark success if no critical errors
     result.success = result.errors.length === 0;
 
@@ -76,6 +86,9 @@ export async function bootstrapServer(guild: Guild): Promise<BootstrapResult> {
     );
     console.log(
       `[Bootstrap] Channels: ${result.channelsCreated.length} created, ${result.channelsSkipped.length} skipped, ${result.channelsDeleted.length} deleted`
+    );
+    console.log(
+      `[Bootstrap] Embeds: ${result.embedsPosted.length} posted, ${result.embedsSkipped.length} skipped`
     );
 
     if (result.errors.length > 0) {
