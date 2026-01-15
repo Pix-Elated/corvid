@@ -247,40 +247,6 @@ export const defaultServerStructure: ServerStructure = {
       ],
     },
     {
-      name: 'TICKETS',
-      permissionOverwrites: [
-        {
-          role: '@everyone',
-          deny: ['ViewChannel'],
-        },
-        {
-          role: 'Unverified',
-          deny: ['ViewChannel'],
-        },
-        {
-          role: 'Quarantine',
-          deny: ['ViewChannel'],
-        },
-        {
-          role: 'Muted',
-          deny: ['SendMessages', 'AddReactions'],
-        },
-        {
-          role: 'Support Team',
-          allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory', 'ManageChannels'],
-        },
-        {
-          role: 'Moderator',
-          allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory', 'ManageChannels'],
-        },
-        {
-          role: 'Admin',
-          allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory', 'ManageChannels'],
-        },
-      ],
-      channels: [], // Dynamic ticket channels created here
-    },
-    {
       name: 'COMMUNITY',
       permissionOverwrites: [
         {
@@ -468,7 +434,12 @@ export const defaultServerStructure: ServerStructure = {
         {
           name: 'moderation-log',
           type: ChannelType.GuildText,
-          topic: 'All moderation actions, audit logs, and ticket transcripts.',
+          topic: 'Moderation actions and audit logs.',
+        },
+        {
+          name: 'ticket-logs',
+          type: ChannelType.GuildText,
+          topic: 'Ticket transcripts and support history.',
         },
       ],
     },
