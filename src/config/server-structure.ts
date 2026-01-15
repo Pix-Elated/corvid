@@ -172,6 +172,28 @@ export const defaultServerStructure: ServerStructure = {
       ],
     },
     {
+      name: 'EXTERNAL ANNOUNCEMENTS',
+      permissionOverwrites: [
+        {
+          // @everyone CAN see (read-only) - for followed announcement channels from other servers
+          role: '@everyone',
+          allow: ['ViewChannel', 'ReadMessageHistory'],
+          deny: ['SendMessages', 'AddReactions', 'CreatePublicThreads', 'CreatePrivateThreads'],
+        },
+        {
+          role: 'Quarantine',
+          deny: ['ViewChannel'],
+        },
+        {
+          role: 'Muted',
+          deny: ['SendMessages', 'AddReactions'],
+        },
+      ],
+      channels: [
+        // No default channels - admin manually adds followed channels from other servers
+      ],
+    },
+    {
       name: 'SUPPORT',
       permissionOverwrites: [
         {
@@ -231,18 +253,6 @@ export const defaultServerStructure: ServerStructure = {
           name: 'feature-requests',
           type: ChannelType.GuildText,
           topic: 'Suggest new features for the app.',
-        },
-        {
-          name: 'create-ticket',
-          type: ChannelType.GuildText,
-          topic: 'Click a button below to open a support ticket.',
-          permissionOverwrites: [
-            {
-              role: 'Verified',
-              allow: ['ViewChannel', 'ReadMessageHistory'],
-              deny: ['SendMessages'], // Can only use buttons, not chat
-            },
-          ],
         },
       ],
     },
