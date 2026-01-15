@@ -66,7 +66,7 @@ async function closeTicket(client: Client, ticket: Ticket, reason: string): Prom
         files: [dmAttachment],
       });
     } catch (dmError) {
-      console.log(`[AutoClose] Could not DM user ${ticket.creatorId}:`, dmError);
+      console.error(`[AutoClose] Could not DM user ${ticket.creatorId}:`, dmError);
     }
 
     // Delete the channel
