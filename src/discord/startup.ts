@@ -5,12 +5,36 @@ import { Client, EmbedBuilder, TextChannel } from 'discord.js';
 // Use DATA_PATH env var for persistent storage, fallback to cwd
 const DATA_DIR = process.env.DATA_PATH || process.cwd();
 const SHUTDOWN_FILE = path.join(DATA_DIR, '.last-shutdown.json');
+const STARTUP_FILE = path.join(DATA_DIR, '.last-startup.json');
 
 interface ShutdownInfo {
   reason: string;
   timestamp: string;
   signal?: string;
   error?: string;
+}
+
+interface StartupInfo {
+  timestamp: string;
+}
+
+/**
+ * Record startup time when the bot starts
+ */
+export function recordStartup(): void {
+  const info: StartupInfo = {
+    timestamp: new Date().toISOString(),
+  };
+
+  try {
+    const fd = fs.openSync(STARTUP_FILE, 'w');
+    fs.writeSync(fd, JSON.stringify(info, null, 2));
+    fs.fsyncSync(fd); // Force flush to disk
+    fs.closeSync(fd);
+    console.log('[Startup] Recorded startup time');
+  } catch (err) {
+    console.error('[Startup] Failed to record startup:', err);
+  }
 }
 
 /**
@@ -25,11 +49,31 @@ export function recordShutdown(reason: string, signal?: string, error?: string):
   };
 
   try {
-    fs.writeFileSync(SHUTDOWN_FILE, JSON.stringify(info, null, 2));
+    // Use open/write/fsync/close to ensure data is flushed to disk
+    // This is important for container environments where process may be killed quickly
+    const fd = fs.openSync(SHUTDOWN_FILE, 'w');
+    fs.writeSync(fd, JSON.stringify(info, null, 2));
+    fs.fsyncSync(fd); // Force flush to disk before process exits
+    fs.closeSync(fd);
     console.log(`[Startup] Recorded shutdown reason: ${reason}`);
   } catch (err) {
     console.error('[Startup] Failed to record shutdown:', err);
   }
+}
+
+/**
+ * Get the last startup info (for validation)
+ */
+function getLastStartup(): StartupInfo | null {
+  try {
+    if (fs.existsSync(STARTUP_FILE)) {
+      const data = fs.readFileSync(STARTUP_FILE, 'utf-8');
+      return JSON.parse(data);
+    }
+  } catch (err) {
+    console.error('[Startup] Failed to read startup info:', err);
+  }
+  return null;
 }
 
 /**
@@ -54,6 +98,9 @@ function getLastShutdown(): ShutdownInfo | null {
 export async function sendStartupMessage(client: Client): Promise<void> {
   console.log('[Startup] Preparing startup message...');
 
+  // Record this startup time for next cycle's validation
+  recordStartup();
+
   const guild = client.guilds.cache.first();
 
   if (!guild) {
@@ -74,6 +121,7 @@ export async function sendStartupMessage(client: Client): Promise<void> {
   }
 
   const lastShutdown = getLastShutdown();
+  const lastStartup = getLastStartup();
 
   const embed = new EmbedBuilder()
     .setTitle('Bot Started')
@@ -83,12 +131,48 @@ export async function sendStartupMessage(client: Client): Promise<void> {
 
   if (lastShutdown) {
     const shutdownTime = new Date(lastShutdown.timestamp);
-    const downtime = formatDuration(Date.now() - shutdownTime.getTime());
+    const now = Date.now();
+    const rawDowntime = now - shutdownTime.getTime();
 
-    embed.addFields(
-      { name: 'Previous Shutdown', value: lastShutdown.reason, inline: true },
-      { name: 'Downtime', value: downtime, inline: true }
-    );
+    // Validate: if we have last startup time, check if shutdown happened after it
+    let isValidDowntime = true;
+    let lastUptime: number | null = null;
+
+    if (lastStartup) {
+      const lastStartupTime = new Date(lastStartup.timestamp).getTime();
+      // Shutdown should be AFTER the previous startup
+      if (shutdownTime.getTime() <= lastStartupTime) {
+        // Data is suspicious - shutdown time is before or at startup time
+        isValidDowntime = false;
+        console.warn('[Startup] Suspicious timing: shutdown timestamp is not after last startup');
+      }
+      // Calculate last session uptime for reference
+      lastUptime = shutdownTime.getTime() - lastStartupTime;
+    }
+
+    // Only show downtime if it seems valid (positive and reasonable)
+    if (isValidDowntime && rawDowntime > 0) {
+      const downtime = formatDuration(rawDowntime);
+      embed.addFields(
+        { name: 'Previous Shutdown', value: lastShutdown.reason, inline: true },
+        { name: 'Downtime', value: downtime, inline: true }
+      );
+    } else {
+      // Show what we can, but indicate data may be unreliable
+      embed.addFields(
+        { name: 'Previous Shutdown', value: lastShutdown.reason, inline: true },
+        { name: 'Downtime', value: 'Unknown (timing data unreliable)', inline: true }
+      );
+    }
+
+    // If we have valid uptime from last session, show it
+    if (lastUptime && lastUptime > 0) {
+      embed.addFields({
+        name: 'Last Session',
+        value: formatDuration(lastUptime),
+        inline: true,
+      });
+    }
 
     if (lastShutdown.signal) {
       embed.addFields({ name: 'Signal', value: lastShutdown.signal, inline: true });
