@@ -134,13 +134,8 @@ export const defaultServerStructure: ServerStructure = {
       name: 'INFORMATION',
       permissionOverwrites: [
         {
-          // @everyone cannot see - must be verified
+          // @everyone CAN see this category (read-only) - lets new users see rules before verifying
           role: '@everyone',
-          deny: ['ViewChannel'],
-        },
-        {
-          // Verified users can see but not send
-          role: 'Verified',
           allow: ['ViewChannel', 'ReadMessageHistory'],
           deny: ['SendMessages', 'AddReactions', 'CreatePublicThreads', 'CreatePrivateThreads'],
         },
