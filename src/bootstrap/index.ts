@@ -4,6 +4,7 @@ import { defaultServerStructure } from '../config/server-structure';
 import { createRoles } from './roles';
 import { createCategories } from './categories';
 import { createAllChannels } from './channels';
+import { cleanupUnmanagedChannels } from './cleanup';
 
 /**
  * Bootstrap a Discord server with roles, categories, and channels
@@ -20,6 +21,8 @@ export async function bootstrapServer(guild: Guild): Promise<BootstrapResult> {
     categoriesSkipped: [],
     channelsCreated: [],
     channelsSkipped: [],
+    channelsDeleted: [],
+    categoriesDeleted: [],
     errors: [],
   };
 
@@ -54,6 +57,13 @@ export async function bootstrapServer(guild: Guild): Promise<BootstrapResult> {
     result.channelsSkipped = channelResult.skipped;
     result.errors.push(...channelResult.errors);
 
+    // Step 4: Cleanup unmanaged channels and categories
+    console.log('[Bootstrap] Step 4: Cleaning up unmanaged channels...');
+    const cleanupResult = await cleanupUnmanagedChannels(guild, defaultServerStructure.categories);
+    result.channelsDeleted = cleanupResult.channelsDeleted;
+    result.categoriesDeleted = cleanupResult.categoriesDeleted;
+    result.errors.push(...cleanupResult.errors);
+
     // Mark success if no critical errors
     result.success = result.errors.length === 0;
 
@@ -62,10 +72,10 @@ export async function bootstrapServer(guild: Guild): Promise<BootstrapResult> {
       `[Bootstrap] Roles: ${result.rolesCreated.length} created, ${result.rolesSkipped.length} skipped`
     );
     console.log(
-      `[Bootstrap] Categories: ${result.categoriesCreated.length} created, ${result.categoriesSkipped.length} skipped`
+      `[Bootstrap] Categories: ${result.categoriesCreated.length} created, ${result.categoriesSkipped.length} skipped, ${result.categoriesDeleted.length} deleted`
     );
     console.log(
-      `[Bootstrap] Channels: ${result.channelsCreated.length} created, ${result.channelsSkipped.length} skipped`
+      `[Bootstrap] Channels: ${result.channelsCreated.length} created, ${result.channelsSkipped.length} skipped, ${result.channelsDeleted.length} deleted`
     );
 
     if (result.errors.length > 0) {

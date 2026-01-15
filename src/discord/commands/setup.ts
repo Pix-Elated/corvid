@@ -66,6 +66,17 @@ export const setupCommand = {
         lines.push(`  Skipped (already exist): ${result.channelsSkipped.length} channels`);
       }
 
+      // Cleanup summary
+      if (result.channelsDeleted.length > 0 || result.categoriesDeleted.length > 0) {
+        lines.push('\n**Cleanup:**');
+        if (result.channelsDeleted.length > 0) {
+          lines.push(`  Deleted channels: ${result.channelsDeleted.join(', ')}`);
+        }
+        if (result.categoriesDeleted.length > 0) {
+          lines.push(`  Deleted categories: ${result.categoriesDeleted.join(', ')}`);
+        }
+      }
+
       // Errors
       if (result.errors.length > 0) {
         lines.push('\n**Errors:**');
