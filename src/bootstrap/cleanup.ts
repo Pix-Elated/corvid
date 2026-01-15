@@ -34,9 +34,10 @@ function getManagedStructure(categories: CategoryConfig[]): {
 
 /**
  * Check if a channel is a ticket channel (dynamically created)
+ * Ticket channels are named: ticket-XXXX-username (e.g., ticket-0001-john)
  */
 function isTicketChannel(channelName: string): boolean {
-  return /^ticket-\d{4}/.test(channelName);
+  return /^ticket-\d{4}-/.test(channelName);
 }
 
 /**
@@ -97,7 +98,12 @@ export async function cleanupUnmanagedChannels(
         continue;
       }
 
-      // Case 3: Channel is in an unmanaged category - leave it alone (will be handled with category)
+      // Case 3: Channel is in an unmanaged category - delete it so category can be removed
+      console.log(
+        `[Cleanup] Deleting channel "${channel.name}" from unmanaged category "${parent.name}"`
+      );
+      await channel.delete('Cleanup: Channel in unmanaged category');
+      result.channelsDeleted.push(channel.name);
     } catch (error) {
       const errorMsg = `Failed to delete channel "${channel.name}": ${error}`;
       console.error(`[Cleanup] ${errorMsg}`);
@@ -118,18 +124,9 @@ export async function cleanupUnmanagedChannels(
 
       // Check if this category is in our managed structure
       if (!categoryNames.has(channel.name.toUpperCase())) {
-        // Check if category is empty (or only has channels we'll delete)
-        const childCount = refreshedChannels.filter((c) => c.parentId === channel.id).size;
-
-        if (childCount === 0) {
-          console.log(`[Cleanup] Deleting unmanaged category: ${channel.name}`);
-          await channel.delete('Cleanup: Category not in managed server structure');
-          result.categoriesDeleted.push(channel.name);
-        } else {
-          console.log(
-            `[Cleanup] Skipping unmanaged category "${channel.name}" (has ${childCount} channels)`
-          );
-        }
+        console.log(`[Cleanup] Deleting unmanaged category: ${channel.name}`);
+        await channel.delete('Cleanup: Category not in managed server structure');
+        result.categoriesDeleted.push(channel.name);
       }
     } catch (error) {
       const errorMsg = `Failed to delete category "${channel.name}": ${error}`;
