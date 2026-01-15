@@ -38,6 +38,7 @@ reaction-roles.json
 info-cards.json
 server-state.json
 .last-shutdown.json
+.last-startup.json
 
 # Coverage
 coverage/
