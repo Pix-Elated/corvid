@@ -25,6 +25,7 @@ export async function bootstrapServer(guild: Guild): Promise<BootstrapResult> {
     channelsDeleted: [],
     categoriesDeleted: [],
     embedsPosted: [],
+    embedsUpdated: [],
     embedsSkipped: [],
     errors: [],
   };
@@ -71,6 +72,7 @@ export async function bootstrapServer(guild: Guild): Promise<BootstrapResult> {
     console.log('[Bootstrap] Step 5: Posting embeds...');
     const embedResult = await postBootstrapEmbeds(guild);
     result.embedsPosted = embedResult.posted;
+    result.embedsUpdated = embedResult.updated;
     result.embedsSkipped = embedResult.skipped;
     result.errors.push(...embedResult.errors);
 
@@ -88,7 +90,7 @@ export async function bootstrapServer(guild: Guild): Promise<BootstrapResult> {
       `[Bootstrap] Channels: ${result.channelsCreated.length} created, ${result.channelsSkipped.length} skipped, ${result.channelsDeleted.length} deleted`
     );
     console.log(
-      `[Bootstrap] Embeds: ${result.embedsPosted.length} posted, ${result.embedsSkipped.length} skipped`
+      `[Bootstrap] Embeds: ${result.embedsPosted.length} posted, ${result.embedsUpdated.length} updated, ${result.embedsSkipped.length} skipped`
     );
 
     if (result.errors.length > 0) {
