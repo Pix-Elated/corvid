@@ -172,10 +172,16 @@ jobs:
           This PR will auto-merge when checks pass.")
 
             echo "Created PR: $PR_URL"
+            # Extract PR number from URL
+            PR_NUMBER=$(echo "$PR_URL" | grep -oE '[0-9]+$')
           fi
 
+          # Small delay to ensure PR is ready
+          sleep 2
+
           # Enable auto-merge with rebase (repo only allows rebase merges)
-          gh pr merge "$BRANCH" --auto --rebase
+          echo "Enabling auto-merge for PR #$PR_NUMBER..."
+          gh pr merge "$PR_NUMBER" --auto --rebase
 
           echo "### Release PR Created" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
