@@ -112,11 +112,12 @@ jobs:
 
           git checkout -b "$BRANCH"
 
-          # Sync package.json from master to avoid version conflicts on merge
-          # This ensures we bump from master's current version
-          git checkout origin/master -- package.json package-lock.json
+          # Rebase onto master to include all merge commits
+          # This ensures the release branch is ahead of master, not diverged
+          git rebase origin/master
 
-          # Bump version
+          # After rebase, sync package.json from master and bump version
+          git checkout origin/master -- package.json package-lock.json
           npm version $NEW --no-git-tag-version
           git add package.json package-lock.json
           git commit -m "chore: bump version to $NEW"
