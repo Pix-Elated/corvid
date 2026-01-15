@@ -174,8 +174,8 @@ jobs:
             echo "Created PR: $PR_URL"
           fi
 
-          # Enable auto-merge (merge commit to handle divergent histories)
-          gh pr merge "$BRANCH" --auto --merge
+          # Enable auto-merge with rebase (repo only allows rebase merges)
+          gh pr merge "$BRANCH" --auto --rebase
 
           echo "### Release PR Created" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
