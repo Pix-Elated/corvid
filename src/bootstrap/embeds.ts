@@ -59,41 +59,30 @@ function getVerificationEmbed(guild: Guild): {
 }
 
 /**
- * Get the ticket panel embed and buttons
+ * Get the private support panel embed and button (for create-ticket channel)
  */
-function getTicketPanelEmbed(): {
+function getSupportPanelEmbed(): {
   embed: EmbedBuilder;
   row: ActionRowBuilder<ButtonBuilder>;
 } {
   const embed = new EmbedBuilder()
-    .setTitle('🎫 Support Center')
+    .setTitle('💬 Private Support')
     .setDescription(
-      'Need help? Choose an option below:\n\n' +
-        '**🚀 Feature Request** - Suggest new features (public discussion)\n' +
-        '**🐛 Bug Report** - Report issues (public discussion)\n' +
-        '**💬 General Support** - Private 1-on-1 help\n\n' +
-        '_Feature requests and bug reports are posted publicly for community discussion._'
+      'Need private 1-on-1 help? Click the button below to open a support ticket.\n\n' +
+        'A private channel will be created for you to discuss your issue with our team.\n\n' +
+        '_For feature requests, go to #feature-requests_\n' +
+        '_For bug reports, go to #bug-reports_'
     )
     .setColor(0x3498db)
-    .setFooter({ text: 'Select an option below' })
+    .setFooter({ text: 'Click below to open a private ticket' })
     .setTimestamp();
 
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
-      .setCustomId('ticket_feature')
-      .setLabel('Feature Request')
-      .setStyle(ButtonStyle.Success)
-      .setEmoji('🚀'),
-    new ButtonBuilder()
-      .setCustomId('ticket_bug')
-      .setLabel('Bug Report')
-      .setStyle(ButtonStyle.Danger)
-      .setEmoji('🐛'),
-    new ButtonBuilder()
       .setCustomId('ticket_support')
-      .setLabel('General Support')
+      .setLabel('Open Support Ticket')
       .setStyle(ButtonStyle.Primary)
-      .setEmoji('💬')
+      .setEmoji('🎫')
   );
 
   return { embed, row };
@@ -199,17 +188,20 @@ function getRoadmapEmbed(): EmbedBuilder {
 }
 
 /**
- * Get bug reports info card
+ * Get bug reports panel with button
  */
-function getBugReportsEmbed(): EmbedBuilder {
-  return new EmbedBuilder()
+function getBugReportsPanel(): {
+  embed: EmbedBuilder;
+  row: ActionRowBuilder<ButtonBuilder>;
+} {
+  const embed = new EmbedBuilder()
     .setTitle('🐛 Bug Reports')
     .setColor(0xe74c3c)
     .setDescription(
       '```diff\n' +
         '- Found a bug? Help us squash it!\n' +
         '```\n' +
-        'Click the **Bug Report** button in #create-ticket to submit a report.\n' +
+        'Click the button below to submit a bug report.\n' +
         'Your report will be posted here for community discussion.'
     )
     .addFields(
@@ -232,22 +224,35 @@ function getBugReportsEmbed(): EmbedBuilder {
           '```',
       }
     )
-    .setFooter({ text: 'Thank you for helping improve the app!' })
+    .setFooter({ text: 'Click below to report a bug' })
     .setTimestamp();
+
+  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setCustomId('ticket_bug')
+      .setLabel('Report a Bug')
+      .setStyle(ButtonStyle.Danger)
+      .setEmoji('🐛')
+  );
+
+  return { embed, row };
 }
 
 /**
- * Get feature requests info card
+ * Get feature requests panel with button
  */
-function getFeatureRequestsEmbed(): EmbedBuilder {
-  return new EmbedBuilder()
+function getFeatureRequestsPanel(): {
+  embed: EmbedBuilder;
+  row: ActionRowBuilder<ButtonBuilder>;
+} {
+  const embed = new EmbedBuilder()
     .setTitle('🚀 Feature Requests')
     .setColor(0x2ecc71)
     .setDescription(
       '```diff\n' +
         '+ Have an idea? We want to hear it!\n' +
         '```\n' +
-        'Click the **Feature Request** button in #create-ticket to submit.\n' +
+        'Click the button below to submit a feature request.\n' +
         'Your request will be posted here for community discussion.'
     )
     .addFields(
@@ -265,8 +270,18 @@ function getFeatureRequestsEmbed(): EmbedBuilder {
           'React with 👍 to support ideas you like!\n' + 'Popular requests get higher priority.',
       }
     )
-    .setFooter({ text: 'Your ideas make the app better!' })
+    .setFooter({ text: 'Click below to submit a feature request' })
     .setTimestamp();
+
+  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setCustomId('ticket_feature')
+      .setLabel('Request a Feature')
+      .setStyle(ButtonStyle.Success)
+      .setEmoji('🚀')
+  );
+
+  return { embed, row };
 }
 
 /**
@@ -311,8 +326,6 @@ const EMBED_CONFIGS: EmbedConfig[] = [
   { channelName: 'welcome', getEmbed: getWelcomeEmbed },
   { channelName: 'rules', getEmbed: () => getRulesEmbed() },
   { channelName: 'roadmap', getEmbed: () => getRoadmapEmbed() },
-  { channelName: 'bug-reports', getEmbed: () => getBugReportsEmbed() },
-  { channelName: 'feature-requests', getEmbed: () => getFeatureRequestsEmbed() },
   { channelName: 'support-general', getEmbed: () => getSupportGeneralEmbed() },
 ];
 
@@ -346,7 +359,7 @@ export async function postBootstrapEmbeds(guild: Guild): Promise<EmbedPostResult
     result.errors.push(`verify-here: ${error}`);
   }
 
-  // Post ticket panel
+  // Post private support panel to create-ticket
   try {
     const ticketChannel = guild.channels.cache.find(
       (ch) => ch.name === 'create-ticket' && ch instanceof TextChannel
@@ -354,7 +367,7 @@ export async function postBootstrapEmbeds(guild: Guild): Promise<EmbedPostResult
 
     if (ticketChannel) {
       if (await isChannelEmpty(ticketChannel)) {
-        const { embed, row } = getTicketPanelEmbed();
+        const { embed, row } = getSupportPanelEmbed();
         await ticketChannel.send({ embeds: [embed], components: [row] });
         result.posted.push('create-ticket');
       } else {
@@ -363,6 +376,44 @@ export async function postBootstrapEmbeds(guild: Guild): Promise<EmbedPostResult
     }
   } catch (error) {
     result.errors.push(`create-ticket: ${error}`);
+  }
+
+  // Post bug reports panel with button
+  try {
+    const bugChannel = guild.channels.cache.find(
+      (ch) => ch.name === 'bug-reports' && ch instanceof TextChannel
+    ) as TextChannel | undefined;
+
+    if (bugChannel) {
+      if (await isChannelEmpty(bugChannel)) {
+        const { embed, row } = getBugReportsPanel();
+        await bugChannel.send({ embeds: [embed], components: [row] });
+        result.posted.push('bug-reports');
+      } else {
+        result.skipped.push('bug-reports (has content)');
+      }
+    }
+  } catch (error) {
+    result.errors.push(`bug-reports: ${error}`);
+  }
+
+  // Post feature requests panel with button
+  try {
+    const featureChannel = guild.channels.cache.find(
+      (ch) => ch.name === 'feature-requests' && ch instanceof TextChannel
+    ) as TextChannel | undefined;
+
+    if (featureChannel) {
+      if (await isChannelEmpty(featureChannel)) {
+        const { embed, row } = getFeatureRequestsPanel();
+        await featureChannel.send({ embeds: [embed], components: [row] });
+        result.posted.push('feature-requests');
+      } else {
+        result.skipped.push('feature-requests (has content)');
+      }
+    }
+  } catch (error) {
+    result.errors.push(`feature-requests: ${error}`);
   }
 
   // Post info cards
