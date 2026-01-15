@@ -8,9 +8,64 @@ import {
   ButtonStyle,
   TextChannel,
   Role,
+  parseEmoji,
 } from 'discord.js';
 import { createPanel } from '../../reaction-roles';
 import { RoleOption } from '../../types';
+
+/**
+ * Validate and normalize emoji input for Discord buttons
+ * Returns the emoji string if valid, or an error message if invalid
+ */
+function validateEmoji(
+  input: string,
+  guildEmojis: Map<string, { id: string; name: string; animated: boolean }>
+): { valid: true; emoji: string } | { valid: false; error: string } {
+  const trimmed = input.trim();
+
+  // Try parsing as Discord emoji format
+  const parsed = parseEmoji(trimmed);
+
+  if (parsed) {
+    // Custom emoji - verify bot can use it
+    if (parsed.id) {
+      const guildEmoji = guildEmojis.get(parsed.id);
+      if (!guildEmoji) {
+        return {
+          valid: false,
+          error: `Custom emoji not found in this server. Use a server emoji or Unicode emoji.`,
+        };
+      }
+      return { valid: true, emoji: trimmed };
+    }
+    // Unicode emoji
+    return { valid: true, emoji: parsed.name };
+  }
+
+  // Check if it looks like a shortcode (common mistake)
+  if (trimmed.startsWith(':') && trimmed.endsWith(':')) {
+    return {
+      valid: false,
+      error: `"${trimmed}" looks like a shortcode. Use the actual emoji (Win+. on Windows) or custom emoji format <:name:id>`,
+    };
+  }
+
+  // Check if it's just an ID (for custom emojis)
+  if (/^\d{17,20}$/.test(trimmed)) {
+    const guildEmoji = guildEmojis.get(trimmed);
+    if (guildEmoji) {
+      const prefix = guildEmoji.animated ? '<a:' : '<:';
+      return { valid: true, emoji: `${prefix}${guildEmoji.name}:${trimmed}>` };
+    }
+    return {
+      valid: false,
+      error: `Emoji ID "${trimmed}" not found in this server.`,
+    };
+  }
+
+  // Assume it's a Unicode emoji - Discord will validate on button creation
+  return { valid: true, emoji: trimmed };
+}
 
 export const rolesSetupCommand = {
   data: new SlashCommandBuilder()
@@ -87,6 +142,18 @@ export const rolesSetupCommand = {
       const title = interaction.options.getString('title', true);
       const description = interaction.options.getString('description') || undefined;
 
+      // Build guild emoji map for validation
+      const guildEmojis = new Map<string, { id: string; name: string; animated: boolean }>();
+      interaction.guild.emojis.cache.forEach((emoji) => {
+        if (emoji.id) {
+          guildEmojis.set(emoji.id, {
+            id: emoji.id,
+            name: emoji.name || 'emoji',
+            animated: emoji.animated || false,
+          });
+        }
+      });
+
       // Collect roles and emojis
       const roleOptions: RoleOption[] = [];
       const botMember = interaction.guild.members.me;
@@ -94,9 +161,9 @@ export const rolesSetupCommand = {
 
       for (let i = 1; i <= 5; i++) {
         const role = interaction.options.getRole(`role${i}`) as Role | null;
-        const emoji = interaction.options.getString(`emoji${i}`);
+        const emojiInput = interaction.options.getString(`emoji${i}`);
 
-        if (role && emoji) {
+        if (role && emojiInput) {
           // Validate role is assignable
           if (role.managed) {
             await interaction.editReply({
@@ -120,10 +187,19 @@ export const rolesSetupCommand = {
             return;
           }
 
+          // Validate emoji
+          const emojiResult = validateEmoji(emojiInput, guildEmojis);
+          if (!emojiResult.valid) {
+            await interaction.editReply({
+              content: `Invalid emoji for **${role.name}**: ${emojiResult.error}`,
+            });
+            return;
+          }
+
           roleOptions.push({
             roleId: role.id,
             roleName: role.name,
-            emoji: emoji,
+            emoji: emojiResult.emoji,
           });
         }
       }
@@ -220,9 +296,22 @@ export const rolesSetupCommand = {
       );
     } catch (error) {
       console.error('[RolesSetup] Error creating role panel:', error);
-      await interaction.editReply({
-        content: 'Failed to create role panel. Check bot permissions.',
-      });
+
+      // Try to give a more helpful error message
+      let errorMessage = 'Failed to create role panel.';
+      if (error instanceof Error) {
+        if (error.message.includes('emoji')) {
+          errorMessage = `Invalid emoji format. Use actual emoji characters (Win+. on Windows) or custom emoji format <:name:id>`;
+        } else if (error.message.includes('Missing Permissions')) {
+          errorMessage = 'Missing permissions. Make sure I can send messages in that channel.';
+        } else if (error.message.includes('Missing Access')) {
+          errorMessage = "I don't have access to that channel.";
+        } else {
+          errorMessage = `Error: ${error.message}`;
+        }
+      }
+
+      await interaction.editReply({ content: errorMessage });
     }
   },
 };
