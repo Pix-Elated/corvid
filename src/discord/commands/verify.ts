@@ -45,12 +45,18 @@ export const verifyCommand = {
     await interaction.deferReply({ ephemeral: true });
 
     try {
+      // Find the rules channel for linking
+      const rulesChannel = interaction.guild.channels.cache.find(
+        (ch) => ch.name === 'rules' && ch.isTextBased()
+      );
+      const rulesLink = rulesChannel ? ` in <#${rulesChannel.id}>` : '';
+
       const embed = new EmbedBuilder()
         .setTitle('🛡️ Server Verification')
         .setDescription(
           `Welcome to **${interaction.guild.name}**!\n\n` +
             'To gain access to the server, please click the button below.\n\n' +
-            'By verifying, you agree to follow the server rules.'
+            `By verifying, you agree to follow the server rules${rulesLink}.`
         )
         .setColor(0x9b59b6) // Purple - matches Verified role
         .setFooter({ text: 'Click the button below to verify' })
