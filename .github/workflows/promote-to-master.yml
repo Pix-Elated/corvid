@@ -112,16 +112,12 @@ jobs:
 
           git checkout -b "$BRANCH"
 
-          # Rebase on master FIRST to include any master-only changes (from previous releases)
-          # This must happen before we modify any files to avoid rebase conflicts
-          git rebase origin/master
-
-          # Now bump version on top of the rebased branch
+          # Bump version on the release branch (created from staging)
           npm version $NEW --no-git-tag-version
           git add package.json package-lock.json
           git commit -m "chore: bump version to $NEW"
 
-          git push origin "$BRANCH"
+          git push origin "$BRANCH" --force
 
           echo "version=$NEW" >> $GITHUB_OUTPUT
           echo "branch=$BRANCH" >> $GITHUB_OUTPUT
@@ -134,12 +130,32 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           BRANCH="${{ steps.version.outputs.branch }}"
 
-          # Create PR
-          PR_URL=$(gh pr create \
-            --base master \
-            --head "$BRANCH" \
-            --title "Release v${VERSION}" \
-            --body "Automated release PR from staging.
+          # Check if PR already exists for this branch
+          EXISTING_PR=$(gh pr list --head "$BRANCH" --base master --json number,url -q '.[0]' || echo "")
+
+          if [ -n "$EXISTING_PR" ] && [ "$EXISTING_PR" != "null" ]; then
+            PR_NUMBER=$(echo "$EXISTING_PR" | jq -r '.number')
+            PR_URL=$(echo "$EXISTING_PR" | jq -r '.url')
+            echo "PR #$PR_NUMBER already exists for $BRANCH, reusing it"
+
+            # Update PR body with latest changes
+            gh pr edit "$PR_NUMBER" --body "Automated release PR from staging.
+
+          **Version:** ${VERSION}
+          **Bump type:** ${{ steps.bump_type.outputs.type }}
+
+          ### Changes included
+          $(git log origin/master..origin/staging --pretty=format:'- %s' | head -20)
+
+          ---
+          This PR will auto-merge when checks pass."
+          else
+            # Create new PR
+            PR_URL=$(gh pr create \
+              --base master \
+              --head "$BRANCH" \
+              --title "Release v${VERSION}" \
+              --body "Automated release PR from staging.
 
           **Version:** ${VERSION}
           **Bump type:** ${{ steps.bump_type.outputs.type }}
@@ -150,10 +166,11 @@ jobs:
           ---
           This PR will auto-merge when checks pass.")
 
-          echo "Created PR: $PR_URL"
+            echo "Created PR: $PR_URL"
+          fi
 
-          # Enable auto-merge (rebase for linear history)
-          gh pr merge "$BRANCH" --auto --rebase
+          # Enable auto-merge (merge commit to handle divergent histories)
+          gh pr merge "$BRANCH" --auto --merge
 
           echo "### Release PR Created" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
