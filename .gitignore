@@ -44,3 +44,6 @@ coverage/
 
 # TypeScript cache
 *.tsbuildinfo
+
+# Claude Code temp files
+tmpclaude-*
