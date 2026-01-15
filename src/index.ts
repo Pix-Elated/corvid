@@ -1,12 +1,21 @@
 import { Client, Events } from 'discord.js';
 import { loadConfig } from './config';
 import { loadState } from './state';
+import { loadTicketState } from './tickets';
+import { loadWarningsState } from './warnings';
+import { loadReactionRolesState } from './reaction-roles';
+import { loadInfoCardsState } from './info-cards';
+import { loadServerState } from './server-state';
 import { createClient } from './discord/client';
 import { handleReady } from './discord/events/ready';
 import { handleMessageCreate } from './discord/events/messageCreate';
+import { handleMessageUpdate } from './discord/events/messageUpdate';
+import { handleMessageDelete } from './discord/events/messageDelete';
 import { handleInteractionCreate } from './discord/events/interactionCreate';
 import { handleGuildMemberAdd } from './discord/events/guildMemberAdd';
+import { handleGuildMemberRemove } from './discord/events/guildMemberRemove';
 import { createApiServer, startApiServer } from './api/server';
+import { recordShutdown, sendStartupMessage } from './discord/startup';
 
 let client: Client | null = null;
 
@@ -28,6 +37,11 @@ async function main(): Promise<void> {
 
   // Load persisted state
   loadState();
+  loadTicketState();
+  loadWarningsState();
+  loadReactionRolesState();
+  loadInfoCardsState();
+  loadServerState();
 
   // Create Discord client
   client = createClient();
@@ -35,6 +49,7 @@ async function main(): Promise<void> {
   // Register event handlers
   client.once(Events.ClientReady, async (readyClient) => {
     await handleReady(readyClient);
+    await sendStartupMessage(readyClient);
   });
 
   // Handle messages (auto-mod + status parsing)
@@ -52,6 +67,50 @@ async function main(): Promise<void> {
     await handleGuildMemberAdd(member);
   });
 
+  // Log member leaves
+  client.on(Events.GuildMemberRemove, async (member) => {
+    await handleGuildMemberRemove(member);
+  });
+
+  // Log message edits
+  client.on(Events.MessageUpdate, async (oldMessage, newMessage) => {
+    await handleMessageUpdate(oldMessage, newMessage);
+  });
+
+  // Log message deletions
+  client.on(Events.MessageDelete, async (message) => {
+    await handleMessageDelete(message);
+  });
+
+  // Discord client resilience handlers
+  client.on(Events.Error, (error) => {
+    console.error('[Main] Discord client error:', error);
+    // Don't exit - let discord.js attempt to recover
+  });
+
+  client.on(Events.Warn, (warning) => {
+    console.warn('[Main] Discord client warning:', warning);
+  });
+
+  client.on(Events.ShardDisconnect, (event, shardId) => {
+    console.warn(
+      `[Main] Shard ${shardId} disconnected (code: ${event.code}), will attempt reconnect...`
+    );
+  });
+
+  client.on(Events.ShardReconnecting, (shardId) => {
+    console.log(`[Main] Shard ${shardId} reconnecting...`);
+  });
+
+  client.on(Events.ShardResume, (shardId, replayedEvents) => {
+    console.log(`[Main] Shard ${shardId} resumed, replayed ${replayedEvents} events`);
+  });
+
+  client.on(Events.ShardError, (error, shardId) => {
+    console.error(`[Main] Shard ${shardId} error:`, error);
+    // Don't exit - let discord.js handle shard recovery
+  });
+
   // Start Express API server
   const app = createApiServer();
   await startApiServer(app, config.port);
@@ -61,6 +120,7 @@ async function main(): Promise<void> {
     await client.login(config.discordBotToken);
   } catch (error) {
     console.error('[Main] Failed to login to Discord:', error);
+    recordShutdown('Failed to login to Discord', undefined, String(error));
     process.exit(1);
   }
 }
@@ -70,6 +130,11 @@ async function main(): Promise<void> {
  */
 async function shutdown(signal: string): Promise<void> {
   console.log(`[Main] Received ${signal}, shutting down gracefully...`);
+
+  // Record shutdown for next startup message
+  const reason =
+    signal === 'SIGTERM' ? 'Graceful shutdown (deployment/restart)' : 'Graceful shutdown (manual)';
+  recordShutdown(reason, signal);
 
   if (client) {
     console.log('[Main] Destroying Discord client...');
@@ -87,12 +152,15 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 // Handle uncaught errors
 process.on('uncaughtException', (error) => {
   console.error('[Main] Uncaught exception:', error);
+  recordShutdown('Uncaught exception (crash)', undefined, String(error));
+  // Only exit for truly fatal errors - let container orchestrator restart
   process.exit(1);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
   console.error('[Main] Unhandled rejection at:', promise, 'reason:', reason);
-  process.exit(1);
+  // Log but don't exit - many rejections are recoverable (network issues, rate limits, etc.)
+  // The bot can continue operating even if individual operations fail
 });
 
 // Start the application

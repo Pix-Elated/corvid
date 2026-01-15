@@ -6,12 +6,7 @@ import {
   GuildMember,
   User,
 } from 'discord.js';
-
-// Simple in-memory warning storage (could be upgraded to persistent storage later)
-const warnings: Map<
-  string,
-  { odID: string; moderatorId: string; reason: string; timestamp: Date }[]
-> = new Map();
+import { getWarnings, addWarning, clearWarnings } from '../../warnings';
 
 // Helper to format duration
 function formatDuration(ms: number): string {
@@ -365,16 +360,13 @@ export const warnCommand = {
     const targetUser = interaction.options.getUser('user', true);
     const reason = interaction.options.getString('reason', true);
 
-    // Store warning
-    const key = `${interaction.guild.id}-${targetUser.id}`;
-    const userWarnings = warnings.get(key) || [];
-    userWarnings.push({
-      odID: interaction.guild.id,
-      moderatorId: interaction.user.id,
-      reason,
-      timestamp: new Date(),
-    });
-    warnings.set(key, userWarnings);
+    // Store warning (persisted to file)
+    const userWarnings = addWarning(
+      interaction.guild.id,
+      targetUser.id,
+      interaction.user.id,
+      reason
+    );
 
     const embed = new EmbedBuilder()
       .setTitle('Warning Issued')
@@ -433,8 +425,7 @@ export const warningsCommand = {
     }
 
     const targetUser = interaction.options.getUser('user', true);
-    const key = `${interaction.guild.id}-${targetUser.id}`;
-    const userWarnings = warnings.get(key) || [];
+    const userWarnings = getWarnings(interaction.guild.id, targetUser.id);
 
     if (userWarnings.length === 0) {
       await interaction.reply({ content: `${targetUser.tag} has no warnings.`, ephemeral: true });
@@ -444,7 +435,8 @@ export const warningsCommand = {
     const warningList = userWarnings
       .slice(-10) // Show last 10 warnings
       .map(
-        (w, i) => `**${i + 1}.** ${w.reason} - <t:${Math.floor(w.timestamp.getTime() / 1000)}:R>`
+        (w, i) =>
+          `**${i + 1}.** ${w.reason} - <t:${Math.floor(new Date(w.timestamp).getTime() / 1000)}:R>`
       )
       .join('\n');
 
@@ -480,10 +472,7 @@ export const clearWarningsCommand = {
     }
 
     const targetUser = interaction.options.getUser('user', true);
-    const key = `${interaction.guild.id}-${targetUser.id}`;
-    const previousCount = warnings.get(key)?.length || 0;
-
-    warnings.delete(key);
+    const previousCount = clearWarnings(interaction.guild.id, targetUser.id);
 
     await interaction.reply({
       content: `Cleared ${previousCount} warning(s) for ${targetUser.tag}.`,

@@ -88,3 +88,49 @@ export interface BootstrapResult {
   channelsSkipped: string[];
   errors: string[];
 }
+
+// Ticket System Types
+export type TicketType = 'feature' | 'bug' | 'support';
+
+export interface Ticket {
+  id: string; // Unique ID (e.g., "ticket-0001")
+  channelId: string; // Discord channel ID
+  creatorId: string; // User who opened ticket
+  type: TicketType;
+  subject: string; // From modal
+  description: string; // From modal
+  priority?: 'low' | 'medium' | 'high' | 'critical'; // For bug reports
+  createdAt: string; // ISO timestamp
+  lastActivity: string; // ISO timestamp (updated on each message)
+  warnedAt?: string; // ISO timestamp when auto-close warning was sent
+}
+
+export interface TicketState {
+  tickets: Ticket[];
+  nextId: number;
+}
+
+// Reaction Roles Types
+export interface RoleOption {
+  roleId: string;
+  roleName: string;
+  emoji: string;
+  description?: string;
+}
+
+export interface RolePanel {
+  id: string; // e.g., "panel-0001"
+  messageId: string; // Discord message ID with the buttons
+  channelId: string; // Channel where panel is posted
+  guildId: string;
+  title: string;
+  description?: string;
+  roles: RoleOption[];
+  createdAt: string;
+  createdBy: string;
+}
+
+export interface ReactionRolesState {
+  panels: RolePanel[];
+  nextId: number;
+}

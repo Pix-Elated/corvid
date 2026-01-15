@@ -1,5 +1,6 @@
 import { Guild, Role, DiscordAPIError } from 'discord.js';
 import { RoleConfig } from '../types';
+import { trackRole } from '../server-state';
 
 export interface RoleCreationResult {
   created: string[];
@@ -66,6 +67,7 @@ export async function createRoles(
           console.log(`[Roles] Role "${roleConfig.name}" already exists, skipping`);
           result.skipped.push(roleConfig.name);
           result.roleMap.set(roleConfig.name, existingRole);
+          trackRole(roleConfig.name, existingRole.id);
           success = true;
           break;
         }
@@ -86,6 +88,7 @@ export async function createRoles(
 
         result.created.push(roleConfig.name);
         result.roleMap.set(roleConfig.name, role);
+        trackRole(roleConfig.name, role.id);
         console.log(`[Roles] Created role "${roleConfig.name}"`);
         success = true;
 
