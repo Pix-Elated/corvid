@@ -22,6 +22,8 @@ import {
   handleCloseButton,
   handleCloseConfirm,
   handleCloseCancel,
+  handleConvertToTicket,
+  handleConvertModal,
 } from './ticketHandler';
 
 const VERIFIED_ROLE_NAME = 'Verified';
@@ -127,6 +129,12 @@ export async function handleInteractionCreate(interaction: Interaction): Promise
       return;
     }
 
+    // Convert to ticket button (staff only)
+    if (buttonId.startsWith('convert_to_ticket_')) {
+      await handleConvertToTicket(interaction);
+      return;
+    }
+
     // Role picker buttons
     if (buttonId.startsWith('role_toggle_')) {
       await handleRoleButton(interaction);
@@ -140,6 +148,10 @@ export async function handleInteractionCreate(interaction: Interaction): Promise
   if (interaction.isModalSubmit()) {
     if (interaction.customId.startsWith('ticket_modal_')) {
       await handleTicketModal(interaction);
+      return;
+    }
+    if (interaction.customId.startsWith('convert_modal_')) {
+      await handleConvertModal(interaction);
       return;
     }
     return;
