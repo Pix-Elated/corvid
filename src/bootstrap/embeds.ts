@@ -59,36 +59,6 @@ function getVerificationEmbed(guild: Guild): {
 }
 
 /**
- * Get the private support panel embed and button (for create-ticket channel)
- */
-function getSupportPanelEmbed(): {
-  embed: EmbedBuilder;
-  row: ActionRowBuilder<ButtonBuilder>;
-} {
-  const embed = new EmbedBuilder()
-    .setTitle('💬 Private Support')
-    .setDescription(
-      'Need private 1-on-1 help? Click the button below to open a support ticket.\n\n' +
-        'A private channel will be created for you to discuss your issue with our team.\n\n' +
-        '_For feature requests, go to #feature-requests_\n' +
-        '_For bug reports, go to #bug-reports_'
-    )
-    .setColor(0x3498db)
-    .setFooter({ text: 'Click below to open a private ticket' })
-    .setTimestamp();
-
-  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
-    new ButtonBuilder()
-      .setCustomId('ticket_support')
-      .setLabel('Open Support Ticket')
-      .setStyle(ButtonStyle.Primary)
-      .setEmoji('🎫')
-  );
-
-  return { embed, row };
-}
-
-/**
  * Get welcome channel embed
  */
 function getWelcomeEmbed(guild: Guild): EmbedBuilder {
@@ -285,35 +255,41 @@ function getFeatureRequestsPanel(): {
 }
 
 /**
- * Get support-general info card
+ * Get support-general panel with private ticket button
  */
-function getSupportGeneralEmbed(): EmbedBuilder {
-  return new EmbedBuilder()
+function getSupportGeneralPanel(): {
+  embed: EmbedBuilder;
+  row: ActionRowBuilder<ButtonBuilder>;
+} {
+  const embed = new EmbedBuilder()
     .setTitle('💬 Support Channel')
     .setColor(0x3498db)
     .setDescription(
       '```fix\n' +
         "Need help? You're in the right place!\n" +
         '```\n' +
-        'Ask questions, get help, and connect with the community.'
+        'Ask questions, get help, and connect with the community.\n\n' +
+        '**Need private 1-on-1 help?** Click the button below to open a private support ticket.'
     )
-    .addFields(
-      {
-        name: '📚 Before Asking',
-        value:
-          '• Check #faq for common questions\n' +
-          '• Search if your question was asked before\n' +
-          '• Read the documentation if available',
-      },
-      {
-        name: '🎫 Need Private Help?',
-        value:
-          'For account issues or sensitive matters,\n' +
-          'click **General Support** in #create-ticket.',
-      }
-    )
+    .addFields({
+      name: '📚 Before Asking',
+      value:
+        '• Check #faq for common questions\n' +
+        '• Search if your question was asked before\n' +
+        '• Read the documentation if available',
+    })
     .setFooter({ text: 'Be patient and respectful • Help others when you can!' })
     .setTimestamp();
+
+  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setCustomId('ticket_support')
+      .setLabel('Open Private Ticket')
+      .setStyle(ButtonStyle.Primary)
+      .setEmoji('🎫')
+  );
+
+  return { embed, row };
 }
 
 interface EmbedConfig {
@@ -326,7 +302,6 @@ const EMBED_CONFIGS: EmbedConfig[] = [
   { channelName: 'welcome', getEmbed: getWelcomeEmbed },
   { channelName: 'rules', getEmbed: () => getRulesEmbed() },
   { channelName: 'roadmap', getEmbed: () => getRoadmapEmbed() },
-  { channelName: 'support-general', getEmbed: () => getSupportGeneralEmbed() },
 ];
 
 /**
@@ -359,23 +334,23 @@ export async function postBootstrapEmbeds(guild: Guild): Promise<EmbedPostResult
     result.errors.push(`verify-here: ${error}`);
   }
 
-  // Post private support panel to create-ticket
+  // Post support panel with private ticket button to support-general
   try {
-    const ticketChannel = guild.channels.cache.find(
-      (ch) => ch.name === 'create-ticket' && ch instanceof TextChannel
+    const supportChannel = guild.channels.cache.find(
+      (ch) => ch.name === 'support-general' && ch instanceof TextChannel
     ) as TextChannel | undefined;
 
-    if (ticketChannel) {
-      if (await isChannelEmpty(ticketChannel)) {
-        const { embed, row } = getSupportPanelEmbed();
-        await ticketChannel.send({ embeds: [embed], components: [row] });
-        result.posted.push('create-ticket');
+    if (supportChannel) {
+      if (await isChannelEmpty(supportChannel)) {
+        const { embed, row } = getSupportGeneralPanel();
+        await supportChannel.send({ embeds: [embed], components: [row] });
+        result.posted.push('support-general');
       } else {
-        result.skipped.push('create-ticket (has content)');
+        result.skipped.push('support-general (has content)');
       }
     }
   } catch (error) {
-    result.errors.push(`create-ticket: ${error}`);
+    result.errors.push(`support-general: ${error}`);
   }
 
   // Post bug reports panel with button
