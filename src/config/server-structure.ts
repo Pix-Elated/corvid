@@ -103,6 +103,30 @@ export const defaultServerStructure: ServerStructure = {
   ],
 
   categories: [
+    // 1. EXTERNAL ANNOUNCEMENTS - followed channels from other servers
+    {
+      name: 'EXTERNAL ANNOUNCEMENTS',
+      permissionOverwrites: [
+        {
+          // @everyone CAN see (read-only) - for followed announcement channels from other servers
+          role: '@everyone',
+          allow: ['ViewChannel', 'ReadMessageHistory'],
+          deny: ['SendMessages', 'AddReactions', 'CreatePublicThreads', 'CreatePrivateThreads'],
+        },
+        {
+          role: 'Quarantine',
+          deny: ['ViewChannel'],
+        },
+        {
+          role: 'Muted',
+          deny: ['SendMessages', 'AddReactions'],
+        },
+      ],
+      channels: [
+        // No default channels - admin manually adds followed channels from other servers
+      ],
+    },
+    // 2. VERIFICATION - landing zone for new members
     {
       name: 'VERIFICATION',
       permissionOverwrites: [
@@ -130,6 +154,7 @@ export const defaultServerStructure: ServerStructure = {
         },
       ],
     },
+    // 3. INFORMATION - read-only info channels
     {
       name: 'INFORMATION',
       permissionOverwrites: [
@@ -171,14 +196,14 @@ export const defaultServerStructure: ServerStructure = {
         },
       ],
     },
+    // 4. COMMUNITY - general chat for verified members
     {
-      name: 'EXTERNAL ANNOUNCEMENTS',
+      name: 'COMMUNITY',
       permissionOverwrites: [
         {
-          // @everyone CAN see (read-only) - for followed announcement channels from other servers
+          // @everyone cannot see - must be verified
           role: '@everyone',
-          allow: ['ViewChannel', 'ReadMessageHistory'],
-          deny: ['SendMessages', 'AddReactions', 'CreatePublicThreads', 'CreatePrivateThreads'],
+          deny: ['ViewChannel'],
         },
         {
           role: 'Quarantine',
@@ -186,13 +211,44 @@ export const defaultServerStructure: ServerStructure = {
         },
         {
           role: 'Muted',
-          deny: ['SendMessages', 'AddReactions'],
+          deny: ['SendMessages', 'AddReactions', 'CreatePublicThreads'],
+        },
+        {
+          role: 'Verified',
+          allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'],
+        },
+        {
+          role: 'Support Team',
+          allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'],
+        },
+        {
+          role: 'Moderator',
+          allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory', 'ManageMessages'],
+        },
+        {
+          role: 'Admin',
+          allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory', 'ManageMessages'],
         },
       ],
       channels: [
-        // No default channels - admin manually adds followed channels from other servers
+        {
+          name: 'general',
+          type: ChannelType.GuildText,
+          topic: 'Main community chat.',
+        },
+        {
+          name: 'off-topic',
+          type: ChannelType.GuildText,
+          topic: 'Off-topic discussions.',
+        },
+        {
+          name: 'screenshots',
+          type: ChannelType.GuildText,
+          topic: 'Share your screenshots and media.',
+        },
       ],
     },
+    // 5. SUPPORT - bugs, features, tickets
     {
       name: 'SUPPORT',
       permissionOverwrites: [
@@ -256,57 +312,7 @@ export const defaultServerStructure: ServerStructure = {
         },
       ],
     },
-    {
-      name: 'COMMUNITY',
-      permissionOverwrites: [
-        {
-          // @everyone cannot see - must be verified
-          role: '@everyone',
-          deny: ['ViewChannel'],
-        },
-        {
-          role: 'Quarantine',
-          deny: ['ViewChannel'],
-        },
-        {
-          role: 'Muted',
-          deny: ['SendMessages', 'AddReactions', 'CreatePublicThreads'],
-        },
-        {
-          role: 'Verified',
-          allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'],
-        },
-        {
-          role: 'Support Team',
-          allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'],
-        },
-        {
-          role: 'Moderator',
-          allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory', 'ManageMessages'],
-        },
-        {
-          role: 'Admin',
-          allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory', 'ManageMessages'],
-        },
-      ],
-      channels: [
-        {
-          name: 'general',
-          type: ChannelType.GuildText,
-          topic: 'Main community chat.',
-        },
-        {
-          name: 'off-topic',
-          type: ChannelType.GuildText,
-          topic: 'Off-topic discussions.',
-        },
-        {
-          name: 'screenshots',
-          type: ChannelType.GuildText,
-          topic: 'Share your screenshots and media.',
-        },
-      ],
-    },
+    // 6. ORTHODOX WARRIORS - guild-specific channels
     {
       name: 'ORTHODOX WARRIORS',
       permissionOverwrites: [
@@ -362,50 +368,7 @@ export const defaultServerStructure: ServerStructure = {
         },
       ],
     },
-    {
-      name: 'VOICE',
-      permissionOverwrites: [
-        {
-          // @everyone cannot see or connect - must be verified
-          role: '@everyone',
-          deny: ['ViewChannel', 'Connect'],
-        },
-        {
-          role: 'Quarantine',
-          deny: ['ViewChannel', 'Connect'],
-        },
-        {
-          role: 'Muted',
-          deny: ['Connect', 'Speak'],
-        },
-        {
-          role: 'Verified',
-          allow: ['ViewChannel', 'Connect', 'Speak'],
-        },
-        {
-          role: 'Orthodox Warriors',
-          allow: ['ViewChannel', 'Connect', 'Speak'],
-        },
-        {
-          role: 'Moderator',
-          allow: ['ViewChannel', 'Connect', 'Speak', 'MuteMembers', 'MoveMembers'],
-        },
-        {
-          role: 'Admin',
-          allow: ['ViewChannel', 'Connect', 'Speak', 'MuteMembers', 'MoveMembers', 'DeafenMembers'],
-        },
-      ],
-      channels: [
-        {
-          name: 'General Voice',
-          type: ChannelType.GuildVoice,
-        },
-        {
-          name: 'AFK',
-          type: ChannelType.GuildVoice,
-        },
-      ],
-    },
+    // 7. STAFF ONLY - private staff channels
     {
       name: 'STAFF ONLY',
       permissionOverwrites: [
@@ -453,6 +416,7 @@ export const defaultServerStructure: ServerStructure = {
         },
       ],
     },
+    // 8. BOT - bot logs and status
     {
       name: 'BOT',
       permissionOverwrites: [
@@ -492,6 +456,51 @@ export const defaultServerStructure: ServerStructure = {
           name: 'server-status',
           type: ChannelType.GuildText,
           topic: 'Server status messages.',
+        },
+      ],
+    },
+    // 9. VOICE - voice channels at the bottom
+    {
+      name: 'VOICE',
+      permissionOverwrites: [
+        {
+          // @everyone cannot see or connect - must be verified
+          role: '@everyone',
+          deny: ['ViewChannel', 'Connect'],
+        },
+        {
+          role: 'Quarantine',
+          deny: ['ViewChannel', 'Connect'],
+        },
+        {
+          role: 'Muted',
+          deny: ['Connect', 'Speak'],
+        },
+        {
+          role: 'Verified',
+          allow: ['ViewChannel', 'Connect', 'Speak'],
+        },
+        {
+          role: 'Orthodox Warriors',
+          allow: ['ViewChannel', 'Connect', 'Speak'],
+        },
+        {
+          role: 'Moderator',
+          allow: ['ViewChannel', 'Connect', 'Speak', 'MuteMembers', 'MoveMembers'],
+        },
+        {
+          role: 'Admin',
+          allow: ['ViewChannel', 'Connect', 'Speak', 'MuteMembers', 'MoveMembers', 'DeafenMembers'],
+        },
+      ],
+      channels: [
+        {
+          name: 'General Voice',
+          type: ChannelType.GuildVoice,
+        },
+        {
+          name: 'AFK',
+          type: ChannelType.GuildVoice,
         },
       ],
     },
