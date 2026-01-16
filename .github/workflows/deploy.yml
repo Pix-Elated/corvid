@@ -92,7 +92,7 @@ jobs:
 
       - name: Notify bot of deployment
         env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_BOT_LOGS_WEBHOOK }}
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEB_HOOK }}
         run: |
           # Send deployment notification to #bot-logs before shutting down
           # The bot will record this timestamp for accurate downtime tracking
