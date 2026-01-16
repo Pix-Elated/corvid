@@ -25,6 +25,7 @@ import {
 
 const STAFF_CHANNEL_NAME = 'staff-chat';
 const ANNOUNCEMENTS_CHANNEL_NAME = 'announcements';
+const UPDATES_ROLE_NAME = 'Updates';
 
 /**
  * Clean up GitHub-generated changelog by removing boilerplate sections
@@ -362,8 +363,12 @@ export async function handlePublishModal(interaction: ModalSubmitInteraction): P
   }
 
   try {
-    // Post to announcements
-    await announcementsChannel.send({ embeds: [embed] });
+    // Find the Updates role to mention
+    const updatesRole = interaction.guild.roles.cache.find((r) => r.name === UPDATES_ROLE_NAME);
+
+    // Post to announcements with @Updates mention
+    const content = updatesRole ? `<@&${updatesRole.id}>` : undefined;
+    await announcementsChannel.send({ content, embeds: [embed] });
 
     // Mark as published
     publishRelease(interaction.user.id);

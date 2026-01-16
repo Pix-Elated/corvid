@@ -28,6 +28,60 @@ import {
 import { handlePublishButton, handlePublishModal, handleDiscardButton } from './releaseHandler';
 
 const VERIFIED_ROLE_NAME = 'Verified';
+const UPDATES_ROLE_NAME = 'Updates';
+
+/**
+ * Handle toggle updates role button
+ */
+async function handleToggleUpdatesRole(interaction: ButtonInteraction): Promise<void> {
+  if (!interaction.guild || !interaction.member) {
+    await interaction.reply({
+      content: 'This can only be used in a server.',
+      ephemeral: true,
+    });
+    return;
+  }
+
+  const member = interaction.member as GuildMember;
+  const updatesRole = interaction.guild.roles.cache.find(
+    (r) => r.name.toLowerCase() === UPDATES_ROLE_NAME.toLowerCase()
+  );
+
+  if (!updatesRole) {
+    await interaction.reply({
+      content: 'Updates role not found. Please contact an administrator.',
+      ephemeral: true,
+    });
+    console.error('[Roles] Updates role not found in guild');
+    return;
+  }
+
+  try {
+    if (member.roles.cache.has(updatesRole.id)) {
+      // Remove role
+      await member.roles.remove(updatesRole, 'User toggled updates role off');
+      await interaction.reply({
+        content: '🔕 You will no longer be notified about updates.',
+        ephemeral: true,
+      });
+      console.log(`[Roles] Removed Updates role from ${member.user.tag}`);
+    } else {
+      // Add role
+      await member.roles.add(updatesRole, 'User toggled updates role on');
+      await interaction.reply({
+        content: '🔔 You will now be notified about updates in #announcements!',
+        ephemeral: true,
+      });
+      console.log(`[Roles] Added Updates role to ${member.user.tag}`);
+    }
+  } catch (error) {
+    console.error('[Roles] Error toggling updates role:', error);
+    await interaction.reply({
+      content: 'Failed to update your role. Please contact an administrator.',
+      ephemeral: true,
+    });
+  }
+}
 
 /**
  * Handle button interactions for verification
@@ -136,7 +190,13 @@ export async function handleInteractionCreate(interaction: Interaction): Promise
       return;
     }
 
-    // Role picker buttons
+    // Updates role toggle (from #roles channel)
+    if (buttonId === 'toggle_updates_role') {
+      await handleToggleUpdatesRole(interaction);
+      return;
+    }
+
+    // Role picker buttons (from /roles-setup command panels)
     if (buttonId.startsWith('role_toggle_')) {
       await handleRoleButton(interaction);
       return;

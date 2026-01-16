@@ -101,6 +101,14 @@ export const defaultServerStructure: ServerStructure = {
       mentionable: false,
       permissions: 0n, // No permissions at all
     },
+    // Self-assignable roles
+    {
+      name: 'Updates',
+      color: 0x3498db, // Blue
+      hoist: false,
+      mentionable: true, // Allow mentioning for release announcements
+      permissions: 0n, // No additional permissions
+    },
   ],
 
   categories: [
@@ -194,6 +202,11 @@ export const defaultServerStructure: ServerStructure = {
           name: 'roadmap',
           type: ChannelType.GuildText,
           topic: 'App updates and planned features.',
+        },
+        {
+          name: 'roles',
+          type: ChannelType.GuildText,
+          topic: 'Self-assign notification roles.',
         },
       ],
     },

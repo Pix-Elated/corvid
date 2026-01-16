@@ -271,6 +271,40 @@ function getFeatureRequestsPanel(): {
 }
 
 /**
+ * Get notification roles panel with toggle buttons
+ */
+function getRolesPanel(_guild: Guild): {
+  embed: EmbedBuilder;
+  row: ActionRowBuilder<ButtonBuilder>;
+} {
+  const embed = new EmbedBuilder()
+    .setTitle('🔔 Notification Roles')
+    .setColor(0x3498db)
+    .setDescription(
+      'Click the buttons below to toggle notification roles.\n\n' +
+        'These roles are used to ping you for specific types of updates.'
+    )
+    .addFields({
+      name: '📢 Updates Role',
+      value:
+        'Get notified when new releases are announced.\n' +
+        'You will be mentioned in #announcements when updates are available.',
+    })
+    .setFooter({ text: 'Click to toggle • Your roles update instantly' })
+    .setTimestamp();
+
+  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setCustomId('toggle_updates_role')
+      .setLabel('Toggle Updates')
+      .setStyle(ButtonStyle.Primary)
+      .setEmoji('📢')
+  );
+
+  return { embed, row };
+}
+
+/**
  * Get support-general panel with private ticket button
  */
 function getSupportGeneralPanel(): {
@@ -379,6 +413,30 @@ export async function postBootstrapEmbeds(guild: Guild, client: Client): Promise
     }
   } catch (error) {
     result.errors.push(`support-general: ${error}`);
+  }
+
+  // Post notification roles panel
+  // ALWAYS delete all existing bot messages first to prevent duplicates
+  try {
+    const rolesChannel = guild.channels.cache.find(
+      (ch) => ch.name === 'roles' && ch instanceof TextChannel
+    ) as TextChannel | undefined;
+
+    if (rolesChannel) {
+      // Delete ALL bot messages in this channel first
+      const deletedCount = await deleteAllBotMessages(rolesChannel, client);
+      if (deletedCount > 0) {
+        console.log(`[Embeds] Cleaned up ${deletedCount} old bot messages from #roles`);
+      }
+
+      // Now post fresh embed
+      const { embed, row } = getRolesPanel(guild);
+      const message = await rolesChannel.send({ embeds: [embed], components: [row] });
+      setCardMessageId('roles', message.id);
+      result.posted.push('roles');
+    }
+  } catch (error) {
+    result.errors.push(`roles: ${error}`);
   }
 
   // Post bug reports panel with button
