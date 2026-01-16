@@ -4,6 +4,7 @@ import { parseMunkMessage } from '../../parser/munk';
 import { updateStatus, updateMaintenance } from '../../state';
 import { updateTicketActivity } from '../../tickets';
 import { handleAutoMod } from './automod';
+import { handleReleaseWebhook } from './releaseHandler';
 
 /**
  * Handle new messages - auto-mod and parse embeds from the source channel
@@ -27,6 +28,14 @@ export async function handleMessageCreate(message: Message): Promise<void> {
     !message.author.bot
   ) {
     updateTicketActivity(message.channel.id);
+  }
+
+  // Check for release webhook messages in bot-logs
+  if (message.webhookId && message.channel instanceof TextChannel) {
+    const wasReleaseWebhook = await handleReleaseWebhook(message);
+    if (wasReleaseWebhook) {
+      return;
+    }
   }
 
   // Run auto-moderation first

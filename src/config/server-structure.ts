@@ -62,6 +62,7 @@ export const defaultServerStructure: ServerStructure = {
       permissions:
         PermissionFlagsBits.ViewChannel |
         PermissionFlagsBits.SendMessages |
+        PermissionFlagsBits.SendMessagesInThreads |
         PermissionFlagsBits.ReadMessageHistory |
         PermissionFlagsBits.AddReactions |
         PermissionFlagsBits.AttachFiles |
@@ -215,19 +216,31 @@ export const defaultServerStructure: ServerStructure = {
         },
         {
           role: 'Verified',
-          allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'],
+          allow: ['ViewChannel', 'SendMessages', 'SendMessagesInThreads', 'ReadMessageHistory'],
         },
         {
           role: 'Support Team',
-          allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'],
+          allow: ['ViewChannel', 'SendMessages', 'SendMessagesInThreads', 'ReadMessageHistory'],
         },
         {
           role: 'Moderator',
-          allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory', 'ManageMessages'],
+          allow: [
+            'ViewChannel',
+            'SendMessages',
+            'SendMessagesInThreads',
+            'ReadMessageHistory',
+            'ManageMessages',
+          ],
         },
         {
           role: 'Admin',
-          allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory', 'ManageMessages'],
+          allow: [
+            'ViewChannel',
+            'SendMessages',
+            'SendMessagesInThreads',
+            'ReadMessageHistory',
+            'ManageMessages',
+          ],
         },
       ],
       channels: [
@@ -267,19 +280,37 @@ export const defaultServerStructure: ServerStructure = {
         },
         {
           role: 'Verified',
-          allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'],
+          allow: ['ViewChannel', 'SendMessages', 'SendMessagesInThreads', 'ReadMessageHistory'],
         },
         {
           role: 'Support Team',
-          allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory', 'ManageMessages'],
+          allow: [
+            'ViewChannel',
+            'SendMessages',
+            'SendMessagesInThreads',
+            'ReadMessageHistory',
+            'ManageMessages',
+          ],
         },
         {
           role: 'Moderator',
-          allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory', 'ManageMessages'],
+          allow: [
+            'ViewChannel',
+            'SendMessages',
+            'SendMessagesInThreads',
+            'ReadMessageHistory',
+            'ManageMessages',
+          ],
         },
         {
           role: 'Admin',
-          allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory', 'ManageMessages'],
+          allow: [
+            'ViewChannel',
+            'SendMessages',
+            'SendMessagesInThreads',
+            'ReadMessageHistory',
+            'ManageMessages',
+          ],
         },
       ],
       channels: [
@@ -299,16 +330,37 @@ export const defaultServerStructure: ServerStructure = {
           name: 'support-general',
           type: ChannelType.GuildText,
           topic: 'General support questions and discussions.',
+          permissionOverwrites: [
+            {
+              role: 'Verified',
+              deny: ['SendMessages'],
+              allow: ['ViewChannel', 'ReadMessageHistory', 'SendMessagesInThreads'],
+            },
+          ],
         },
         {
           name: 'bug-reports',
           type: ChannelType.GuildText,
           topic: 'Report bugs here with detailed reproduction steps.',
+          permissionOverwrites: [
+            {
+              role: 'Verified',
+              deny: ['SendMessages'],
+              allow: ['ViewChannel', 'ReadMessageHistory', 'SendMessagesInThreads'],
+            },
+          ],
         },
         {
           name: 'feature-requests',
           type: ChannelType.GuildText,
           topic: 'Suggest new features for the app.',
+          permissionOverwrites: [
+            {
+              role: 'Verified',
+              deny: ['SendMessages'],
+              allow: ['ViewChannel', 'ReadMessageHistory', 'SendMessagesInThreads'],
+            },
+          ],
         },
       ],
     },
