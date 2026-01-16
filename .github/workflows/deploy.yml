@@ -104,8 +104,8 @@ jobs:
           # Send deployment notification to #bot-logs before shutting down
           # Bot will parse version/commits for the startup message
           if [ -n "$DISCORD_WEBHOOK" ]; then
-            # Get recent commit messages (escape for JSON)
-            COMMITS=$(git log --pretty=format:"• %s" -5 HEAD 2>/dev/null | sed 's/"/\\"/g' | tr '\n' '|' | sed 's/|/\\n/g' || echo "• New deployment")
+            # Get only the commits in THIS push (not last 5 which causes duplicates)
+            COMMITS=$(git log --pretty=format:"• %s" ${{ github.event.before }}..${{ github.sha }} 2>/dev/null | sed 's/"/\\"/g' | tr '\n' '|' | sed 's/|/\\n/g' || echo "• New deployment")
             REPO="${{ github.repository }}"
             COMMIT_URL="https://github.com/${REPO}/commit/${{ github.sha }}"
             COMPARE_URL="https://github.com/${REPO}/compare/${{ github.event.before }}...${{ github.sha }}"
