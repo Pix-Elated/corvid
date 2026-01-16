@@ -27,6 +27,39 @@ const STAFF_CHANNEL_NAME = 'staff-chat';
 const ANNOUNCEMENTS_CHANNEL_NAME = 'announcements';
 
 /**
+ * Clean up GitHub-generated changelog by removing boilerplate sections
+ * Strips: Security Verification, Downloads, Auto-Updates, How to Verify, tables, etc.
+ */
+function cleanChangelog(changelog: string): string {
+  let cleaned = changelog;
+
+  // Remove the main header "## RavenHUD vX.X.X"
+  cleaned = cleaned.replace(/^##\s+RavenHUD\s+v[\d.]+\s*\n*/im, '');
+
+  // Remove entire sections we don't want
+  cleaned = cleaned.replace(/###\s*Security Verification[\s\S]*?(?=###|$)/gi, '');
+  cleaned = cleaned.replace(/###\s*How to Verify[\s\S]*?(?=###|$)/gi, '');
+  cleaned = cleaned.replace(/###\s*Downloads[\s\S]*?(?=###|$)/gi, '');
+  cleaned = cleaned.replace(/###\s*Auto-Updates[\s\S]*?(?=###|$)/gi, '');
+  cleaned = cleaned.replace(/###\s*Release Notes[\s\S]*?(?=###|$)/gi, '');
+
+  // Remove "Built and signed" line
+  cleaned = cleaned.replace(/^.*Built and signed.*$/gim, '');
+
+  // Remove markdown tables (lines with |)
+  cleaned = cleaned.replace(/^\|.*\|$/gm, '');
+  cleaned = cleaned.replace(/^\s*\|?[-:]+\|[-:|\s]+$/gm, '');
+
+  // Convert ### headings to bold (for what remains)
+  cleaned = cleaned.replace(/^###\s*(.+)$/gm, '**$1**');
+
+  // Clean up excessive newlines
+  cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
+
+  return cleaned.trim();
+}
+
+/**
  * Check if a message is from the RavenHUD release webhook
  * Specifically matches the format: "🎉 RavenHUD vX.X.X Released!"
  */
@@ -67,17 +100,24 @@ export function extractReleaseInfo(message: Message): {
 
   const embed = message.embeds[0];
 
-  // Try to extract version from title or description
-  const versionPattern = /v?(\d+\.\d+\.\d+)/;
+  // Try to extract version from title or description (include the v prefix)
+  const versionPattern = /(v?\d+\.\d+\.\d+)/;
   let version = '';
 
   const titleMatch = embed.title?.match(versionPattern);
   if (titleMatch) {
     version = titleMatch[1];
+    // Ensure version starts with v
+    if (!version.startsWith('v')) {
+      version = 'v' + version;
+    }
   } else {
     const descMatch = embed.description?.match(versionPattern);
     if (descMatch) {
       version = descMatch[1];
+      if (!version.startsWith('v')) {
+        version = 'v' + version;
+      }
     }
   }
 
@@ -95,8 +135,8 @@ export function extractReleaseInfo(message: Message): {
     changelog = changelog ? `${changelog}\n\n${fieldContent}` : fieldContent;
   }
 
-  // Get URL from embed or construct it
-  const releaseUrl = embed.url || message.embeds[0].author?.url || '';
+  // Construct the release URL from version (embed URL is often malformed)
+  const releaseUrl = `https://github.com/Pix-Elated/ravenhud/releases/tag/${version}`;
 
   return { version, changelog, releaseUrl };
 }
@@ -119,7 +159,7 @@ export async function handleReleaseWebhook(message: Message): Promise<boolean> {
     return false;
   }
 
-  console.log(`[ReleaseHandler] Detected release webhook for v${releaseInfo.version}`);
+  console.log(`[ReleaseHandler] Detected release webhook for ${releaseInfo.version}`);
 
   // Delete the webhook message
   try {
@@ -161,15 +201,15 @@ async function notifyStaffChannel(client: Client, release: PendingRelease): Prom
     return;
   }
 
-  // Truncate changelog if too long for embed
+  // Clean and truncate changelog for embed
+  let changelog = cleanChangelog(release.changelog);
   const maxChangelogLength = 1000;
-  let changelog = release.changelog;
   if (changelog.length > maxChangelogLength) {
     changelog = changelog.substring(0, maxChangelogLength) + '...';
   }
 
   const embed = new EmbedBuilder()
-    .setTitle(`New Release Ready: v${release.version}`)
+    .setTitle(`New Release Ready: ${release.version}`)
     .setDescription(
       'A new release is ready to be announced.\n\n' +
         'Click **Write Announcement** to add a message explaining this release in plain English, ' +
@@ -240,7 +280,7 @@ export async function handlePublishButton(interaction: ButtonInteraction): Promi
   // Show modal for announcement message
   const modal = new ModalBuilder()
     .setCustomId('release_modal')
-    .setTitle(`Announce v${release.version}`);
+    .setTitle(`Announce ${release.version}`);
 
   const messageInput = new TextInputBuilder()
     .setCustomId('announcement_message')
@@ -293,16 +333,16 @@ export async function handlePublishModal(interaction: ModalSubmitInteraction): P
     return;
   }
 
-  // Truncate changelog for announcement if needed
+  // Clean and truncate changelog for announcement
+  let changelog = cleanChangelog(release.changelog);
   const maxChangelogLength = 800;
-  let changelog = release.changelog;
   if (changelog.length > maxChangelogLength) {
     changelog = changelog.substring(0, maxChangelogLength) + '...';
   }
 
   // Build the announcement embed
   const embed = new EmbedBuilder()
-    .setTitle(`📢 Release v${release.version}`)
+    .setTitle(`📢 Release ${release.version}`)
     .setDescription(customMessage)
     .setColor(0x5865f2) // Discord blurple
     .setTimestamp();
@@ -332,12 +372,10 @@ export async function handlePublishModal(interaction: ModalSubmitInteraction): P
     await updateNotificationMessage(interaction.client, release, 'published', interaction.user.tag);
 
     await interaction.editReply({
-      content: `Release v${release.version} has been announced in #${ANNOUNCEMENTS_CHANNEL_NAME}!`,
+      content: `Release ${release.version} has been announced in #${ANNOUNCEMENTS_CHANNEL_NAME}!`,
     });
 
-    console.log(
-      `[ReleaseHandler] Release v${release.version} published by ${interaction.user.tag}`
-    );
+    console.log(`[ReleaseHandler] Release ${release.version} published by ${interaction.user.tag}`);
   } catch (error) {
     console.error('[ReleaseHandler] Failed to post announcement:', error);
     await interaction.editReply({
@@ -376,11 +414,11 @@ export async function handleDiscardButton(interaction: ButtonInteraction): Promi
   await updateNotificationMessage(interaction.client, release, 'discarded', interaction.user.tag);
 
   await interaction.reply({
-    content: `Release v${release.version} has been discarded.`,
+    content: `Release ${release.version} has been discarded.`,
     ephemeral: true,
   });
 
-  console.log(`[ReleaseHandler] Release v${release.version} discarded by ${interaction.user.tag}`);
+  console.log(`[ReleaseHandler] Release ${release.version} discarded by ${interaction.user.tag}`);
 }
 
 /**
