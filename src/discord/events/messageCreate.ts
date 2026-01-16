@@ -38,14 +38,49 @@ export async function handleMessageCreate(message: Message): Promise<void> {
     message.channel.name === 'bot-logs'
   ) {
     // Check for deployment webhook (sent by GitHub Actions before deploy)
-    const content = message.content?.toLowerCase() || '';
+    // Format: content = "DEPLOYMENT_START|{version}|{sha}" with embed containing changelog
+    const content = message.content || '';
     const embedTitle = message.embeds[0]?.title?.toLowerCase() || '';
 
-    if (content.includes('deployment starting') || embedTitle.includes('deployment starting')) {
-      console.log(
-        '[MessageCreate] Deployment webhook detected, saving timestamp for downtime tracking'
-      );
-      recordDeploymentStarting();
+    if (content.startsWith('DEPLOYMENT_START|') || embedTitle.includes('deploying corvid')) {
+      console.log('[MessageCreate] Deployment webhook detected');
+
+      // Parse version and changelog from webhook
+      let version: string | undefined;
+      let commitSha: string | undefined;
+      let changelog: string | undefined;
+      let commitUrl: string | undefined;
+
+      // Parse from content: DEPLOYMENT_START|version|sha
+      if (content.startsWith('DEPLOYMENT_START|')) {
+        const parts = content.split('|');
+        version = parts[1];
+        commitSha = parts[2];
+      }
+
+      // Parse from embed fields
+      const embed = message.embeds[0];
+      if (embed?.fields) {
+        for (const field of embed.fields) {
+          if (field.name === 'Version' && !version) {
+            version = field.value;
+          }
+          if (field.name === 'Commit') {
+            // Format: [sha](url)
+            const match = field.value.match(/\[([^\]]+)\]\(([^)]+)\)/);
+            if (match) {
+              commitSha = commitSha || match[1];
+              commitUrl = match[2];
+            }
+          }
+          if (field.name === 'Changes') {
+            changelog = field.value;
+          }
+        }
+      }
+
+      console.log(`[MessageCreate] Deployment: v${version} (${commitSha})`);
+      recordDeploymentStarting(version, commitSha, changelog, commitUrl);
 
       // React to acknowledge
       try {

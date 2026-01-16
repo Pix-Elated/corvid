@@ -22,6 +22,9 @@ interface StartupInfo {
 interface DeploymentInfo {
   timestamp: string;
   version?: string;
+  commitSha?: string;
+  changelog?: string;
+  commitUrl?: string;
 }
 
 /**
@@ -71,10 +74,18 @@ export function recordShutdown(reason: string, signal?: string, error?: string):
  * Record that a deployment is starting (called when webhook is received)
  * This provides accurate downtime tracking since it's recorded BEFORE shutdown
  */
-export function recordDeploymentStarting(version?: string): void {
+export function recordDeploymentStarting(
+  version?: string,
+  commitSha?: string,
+  changelog?: string,
+  commitUrl?: string
+): void {
   const info: DeploymentInfo = {
     timestamp: new Date().toISOString(),
     version,
+    commitSha,
+    changelog,
+    commitUrl,
   };
 
   try {
@@ -82,7 +93,7 @@ export function recordDeploymentStarting(version?: string): void {
     fs.writeSync(fd, JSON.stringify(info, null, 2));
     fs.fsyncSync(fd);
     fs.closeSync(fd);
-    console.log('[Startup] Recorded deployment start time');
+    console.log(`[Startup] Recorded deployment: v${version} (${commitSha})`);
   } catch (err) {
     console.error('[Startup] Failed to record deployment start:', err);
   }
@@ -100,21 +111,6 @@ function getDeploymentStart(): DeploymentInfo | null {
     }
   } catch (err) {
     console.error('[Startup] Failed to read deployment info:', err);
-  }
-  return null;
-}
-
-/**
- * Get the last startup info (for validation)
- */
-function getLastStartup(): StartupInfo | null {
-  try {
-    if (fs.existsSync(STARTUP_FILE)) {
-      const data = fs.readFileSync(STARTUP_FILE, 'utf-8');
-      return JSON.parse(data);
-    }
-  } catch (err) {
-    console.error('[Startup] Failed to read startup info:', err);
   }
   return null;
 }
@@ -164,77 +160,76 @@ export async function sendStartupMessage(client: Client): Promise<void> {
   }
 
   const lastShutdown = getLastShutdown();
-  const lastStartup = getLastStartup();
   const deploymentStart = getDeploymentStart();
 
-  const embed = new EmbedBuilder()
-    .setTitle('Bot Started')
-    .setColor(0x2ecc71)
-    .setTimestamp()
-    .addFields({ name: 'Status', value: 'Online and ready', inline: true });
+  // Build embed based on whether this is a deployment or regular start
+  const embed = new EmbedBuilder().setTimestamp();
 
-  // Prefer deployment timestamp for accurate downtime (it's recorded BEFORE shutdown)
-  if (deploymentStart) {
+  if (deploymentStart && deploymentStart.version) {
+    // This is a deployment - show update-focused message
     const deployTime = new Date(deploymentStart.timestamp);
     const now = Date.now();
     const downtime = now - deployTime.getTime();
+    const downtimeStr =
+      downtime > 0 && downtime < 30 * 60 * 1000 ? formatDuration(downtime) : 'N/A';
 
-    if (downtime > 0 && downtime < 30 * 60 * 1000) {
-      // Valid if positive and less than 30 minutes
+    embed
+      .setTitle(`Corvid Updated to v${deploymentStart.version}`)
+      .setColor(0x3498db) // Blue for deployment
+      .setDescription('Bot is now online with the latest changes.');
+
+    // Version and commit info
+    if (deploymentStart.commitSha) {
+      const commitLink = deploymentStart.commitUrl
+        ? `[${deploymentStart.commitSha}](${deploymentStart.commitUrl})`
+        : deploymentStart.commitSha;
       embed.addFields(
-        { name: 'Previous Shutdown', value: 'Deployment/restart', inline: true },
-        { name: 'Downtime', value: formatDuration(downtime), inline: true }
+        { name: 'Version', value: deploymentStart.version, inline: true },
+        { name: 'Commit', value: commitLink, inline: true },
+        { name: 'Downtime', value: downtimeStr, inline: true }
       );
-      embed.setColor(0x3498db); // Blue for deployment
     } else {
       embed.addFields(
-        { name: 'Previous Shutdown', value: 'Deployment/restart', inline: true },
-        { name: 'Downtime', value: 'Unknown (timing data unreliable)', inline: true }
+        { name: 'Version', value: deploymentStart.version, inline: true },
+        { name: 'Downtime', value: downtimeStr, inline: true }
       );
     }
+
+    // Changelog
+    if (deploymentStart.changelog) {
+      // Truncate changelog if too long
+      const changelog =
+        deploymentStart.changelog.length > 800
+          ? deploymentStart.changelog.slice(0, 800) + '...'
+          : deploymentStart.changelog;
+      embed.addFields({ name: 'Changes', value: changelog });
+    }
+
+    // Add link to releases
+    embed.addFields({
+      name: 'Links',
+      value: '[View Releases](https://github.com/Pix-Elated/corvid/releases)',
+    });
   } else if (lastShutdown) {
+    // Regular restart (not a deployment)
     const shutdownTime = new Date(lastShutdown.timestamp);
     const now = Date.now();
     const rawDowntime = now - shutdownTime.getTime();
+    const downtimeStr = rawDowntime > 0 ? formatDuration(rawDowntime) : 'N/A';
 
-    // Validate: if we have last startup time, check if shutdown happened after it
-    let isValidDowntime = true;
-    let lastUptime: number | null = null;
-
-    if (lastStartup) {
-      const lastStartupTime = new Date(lastStartup.timestamp).getTime();
-      // Shutdown should be AFTER the previous startup
-      if (shutdownTime.getTime() <= lastStartupTime) {
-        // Data is suspicious - shutdown time is before or at startup time
-        isValidDowntime = false;
-        console.warn('[Startup] Suspicious timing: shutdown timestamp is not after last startup');
-      }
-      // Calculate last session uptime for reference
-      lastUptime = shutdownTime.getTime() - lastStartupTime;
-    }
-
-    // Only show downtime if it seems valid (positive and reasonable)
-    if (isValidDowntime && rawDowntime > 0) {
-      const downtime = formatDuration(rawDowntime);
-      embed.addFields(
-        { name: 'Previous Shutdown', value: lastShutdown.reason, inline: true },
-        { name: 'Downtime', value: downtime, inline: true }
+    embed
+      .setTitle('Corvid Restarted')
+      .setDescription('Bot is back online.')
+      .addFields(
+        { name: 'Reason', value: lastShutdown.reason, inline: true },
+        { name: 'Downtime', value: downtimeStr, inline: true }
       );
+
+    // Color based on shutdown type
+    if (lastShutdown.reason.includes('error') || lastShutdown.reason.includes('crash')) {
+      embed.setColor(0xe74c3c); // Red for errors
     } else {
-      // Show what we can, but indicate data may be unreliable
-      embed.addFields(
-        { name: 'Previous Shutdown', value: lastShutdown.reason, inline: true },
-        { name: 'Downtime', value: 'Unknown (timing data unreliable)', inline: true }
-      );
-    }
-
-    // If we have valid uptime from last session, show it
-    if (lastUptime && lastUptime > 0) {
-      embed.addFields({
-        name: 'Last Session',
-        value: formatDuration(lastUptime),
-        inline: true,
-      });
+      embed.setColor(0x2ecc71); // Green for normal
     }
 
     if (lastShutdown.signal) {
@@ -244,22 +239,12 @@ export async function sendStartupMessage(client: Client): Promise<void> {
     if (lastShutdown.error) {
       embed.addFields({
         name: 'Error Details',
-        value: `\`\`\`${lastShutdown.error.slice(0, 900)}\`\`\``,
+        value: `\`\`\`${lastShutdown.error.slice(0, 500)}\`\`\``,
       });
     }
-
-    // Color based on shutdown type
-    if (lastShutdown.reason.includes('error') || lastShutdown.reason.includes('crash')) {
-      embed.setColor(0xe74c3c); // Red for errors
-    } else if (lastShutdown.reason.includes('Graceful')) {
-      embed.setColor(0x3498db); // Blue for graceful
-    }
   } else {
-    embed.addFields({
-      name: 'Previous Shutdown',
-      value: 'Unknown (first start or no record)',
-      inline: true,
-    });
+    // First start or no info
+    embed.setTitle('Corvid Started').setColor(0x2ecc71).setDescription('Bot is now online.');
   }
 
   try {

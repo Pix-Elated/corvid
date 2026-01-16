@@ -90,18 +90,43 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
+      - name: Checkout for commit info
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 10
+
       - name: Notify bot of deployment
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEB_HOOK }}
+          VERSION: ${{ needs.build-and-push.outputs.version }}
+          SHORT_SHA: ${{ needs.build-and-push.outputs.short_sha }}
         run: |
           # Send deployment notification to #bot-logs before shutting down
-          # The bot will record this timestamp for accurate downtime tracking
+          # Bot will parse version/commits for the startup message
           if [ -n "$DISCORD_WEBHOOK" ]; then
+            # Get recent commit messages (escape for JSON)
+            COMMITS=$(git log --pretty=format:"• %s" -5 HEAD 2>/dev/null | sed 's/"/\\"/g' | tr '\n' '|' | sed 's/|/\\n/g' || echo "• New deployment")
+            REPO="${{ github.repository }}"
+            COMMIT_URL="https://github.com/${REPO}/commit/${{ github.sha }}"
+            COMPARE_URL="https://github.com/${REPO}/compare/${{ github.event.before }}...${{ github.sha }}"
+
+            # Send embed with version info that bot will parse
             curl -s -X POST "$DISCORD_WEBHOOK" \
               -H "Content-Type: application/json" \
-              -d '{"content": "🔧 **Deployment Starting** - New version incoming..."}' || true
+              -d "{
+                \"content\": \"DEPLOYMENT_START|${VERSION}|${SHORT_SHA}\",
+                \"embeds\": [{
+                  \"title\": \"Deploying Corvid v${VERSION}\",
+                  \"color\": 3447003,
+                  \"fields\": [
+                    {\"name\": \"Version\", \"value\": \"${VERSION}\", \"inline\": true},
+                    {\"name\": \"Commit\", \"value\": \"[${SHORT_SHA}](${COMMIT_URL})\", \"inline\": true},
+                    {\"name\": \"Changes\", \"value\": \"${COMMITS}\"}
+                  ],
+                  \"footer\": {\"text\": \"Deployment starting...\"}
+                }]
+              }" || true
             echo "Sent deployment notification to Discord"
-            # Give the bot a moment to process and save the timestamp
             sleep 3
           else
             echo "No Discord webhook configured, skipping notification"
