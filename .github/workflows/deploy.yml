@@ -90,6 +90,23 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
+      - name: Notify bot of deployment
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEB_HOOK }}
+        run: |
+          # Send deployment notification to #bot-logs before shutting down
+          # The bot will record this timestamp for accurate downtime tracking
+          if [ -n "$DISCORD_WEBHOOK" ]; then
+            curl -s -X POST "$DISCORD_WEBHOOK" \
+              -H "Content-Type: application/json" \
+              -d '{"content": "🔧 **Deployment Starting** - New version incoming..."}' || true
+            echo "Sent deployment notification to Discord"
+            # Give the bot a moment to process and save the timestamp
+            sleep 3
+          else
+            echo "No Discord webhook configured, skipping notification"
+          fi
+
       - name: Deploy to Container App
         run: |
           # Use the unique tag (version-sha) to force Azure to create a new revision

@@ -6,6 +6,7 @@ import { Client, EmbedBuilder, TextChannel } from 'discord.js';
 const DATA_DIR = process.env.DATA_PATH || process.cwd();
 const SHUTDOWN_FILE = path.join(DATA_DIR, '.last-shutdown.json');
 const STARTUP_FILE = path.join(DATA_DIR, '.last-startup.json');
+const DEPLOYMENT_FILE = path.join(DATA_DIR, '.deployment-started.json');
 
 interface ShutdownInfo {
   reason: string;
@@ -16,6 +17,11 @@ interface ShutdownInfo {
 
 interface StartupInfo {
   timestamp: string;
+}
+
+interface DeploymentInfo {
+  timestamp: string;
+  version?: string;
 }
 
 /**
@@ -59,6 +65,43 @@ export function recordShutdown(reason: string, signal?: string, error?: string):
   } catch (err) {
     console.error('[Startup] Failed to record shutdown:', err);
   }
+}
+
+/**
+ * Record that a deployment is starting (called when webhook is received)
+ * This provides accurate downtime tracking since it's recorded BEFORE shutdown
+ */
+export function recordDeploymentStarting(version?: string): void {
+  const info: DeploymentInfo = {
+    timestamp: new Date().toISOString(),
+    version,
+  };
+
+  try {
+    const fd = fs.openSync(DEPLOYMENT_FILE, 'w');
+    fs.writeSync(fd, JSON.stringify(info, null, 2));
+    fs.fsyncSync(fd);
+    fs.closeSync(fd);
+    console.log('[Startup] Recorded deployment start time');
+  } catch (err) {
+    console.error('[Startup] Failed to record deployment start:', err);
+  }
+}
+
+/**
+ * Get and clear the deployment start info
+ */
+function getDeploymentStart(): DeploymentInfo | null {
+  try {
+    if (fs.existsSync(DEPLOYMENT_FILE)) {
+      const data = fs.readFileSync(DEPLOYMENT_FILE, 'utf-8');
+      fs.unlinkSync(DEPLOYMENT_FILE); // Clear after reading
+      return JSON.parse(data);
+    }
+  } catch (err) {
+    console.error('[Startup] Failed to read deployment info:', err);
+  }
+  return null;
 }
 
 /**
@@ -122,6 +165,7 @@ export async function sendStartupMessage(client: Client): Promise<void> {
 
   const lastShutdown = getLastShutdown();
   const lastStartup = getLastStartup();
+  const deploymentStart = getDeploymentStart();
 
   const embed = new EmbedBuilder()
     .setTitle('Bot Started')
@@ -129,7 +173,26 @@ export async function sendStartupMessage(client: Client): Promise<void> {
     .setTimestamp()
     .addFields({ name: 'Status', value: 'Online and ready', inline: true });
 
-  if (lastShutdown) {
+  // Prefer deployment timestamp for accurate downtime (it's recorded BEFORE shutdown)
+  if (deploymentStart) {
+    const deployTime = new Date(deploymentStart.timestamp);
+    const now = Date.now();
+    const downtime = now - deployTime.getTime();
+
+    if (downtime > 0 && downtime < 30 * 60 * 1000) {
+      // Valid if positive and less than 30 minutes
+      embed.addFields(
+        { name: 'Previous Shutdown', value: 'Deployment/restart', inline: true },
+        { name: 'Downtime', value: formatDuration(downtime), inline: true }
+      );
+      embed.setColor(0x3498db); // Blue for deployment
+    } else {
+      embed.addFields(
+        { name: 'Previous Shutdown', value: 'Deployment/restart', inline: true },
+        { name: 'Downtime', value: 'Unknown (timing data unreliable)', inline: true }
+      );
+    }
+  } else if (lastShutdown) {
     const shutdownTime = new Date(lastShutdown.timestamp);
     const now = Date.now();
     const rawDowntime = now - shutdownTime.getTime();
