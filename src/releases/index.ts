@@ -137,7 +137,7 @@ export function setPendingRelease(
   };
   currentState.pending = release;
   saveReleaseState();
-  console.log(`[Releases] Set pending release: v${version}`);
+  console.log(`[Releases] Set pending release: ${version}`);
   return release;
 }
 
@@ -173,7 +173,7 @@ export function publishRelease(publishedBy: string): PendingRelease | null {
   };
   currentState.pending = null;
   saveReleaseState();
-  console.log(`[Releases] Published release v${release.version} by ${publishedBy}`);
+  console.log(`[Releases] Published release ${release.version} by ${publishedBy}`);
   return release;
 }
 
@@ -186,7 +186,7 @@ export function discardRelease(): PendingRelease | null {
 
   currentState.pending = null;
   saveReleaseState();
-  console.log(`[Releases] Discarded release v${release.version}`);
+  console.log(`[Releases] Discarded release ${release.version}`);
   return release;
 }
 
