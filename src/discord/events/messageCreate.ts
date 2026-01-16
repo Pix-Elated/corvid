@@ -1,4 +1,4 @@
-import { Message, MessageType, TextChannel } from 'discord.js';
+import { Message, MessageType, TextChannel, EmbedBuilder } from 'discord.js';
 import { getConfig } from '../../config';
 import { parseMunkMessage } from '../../parser/munk';
 import { updateStatus, updateMaintenance } from '../../state';
@@ -80,14 +80,54 @@ export async function handleMessageCreate(message: Message): Promise<void> {
       }
 
       console.log(`[MessageCreate] Deployment: v${version} (${commitSha})`);
-      recordDeploymentStarting(version, commitSha, changelog, commitUrl);
 
-      // React to acknowledge
+      // Delete the webhook message
       try {
-        await message.react('✅');
-      } catch {
-        // Ignore reaction errors
+        await message.delete();
+        console.log('[MessageCreate] Deleted deployment webhook message');
+      } catch (err) {
+        console.error('[MessageCreate] Failed to delete webhook message:', err);
       }
+
+      // Post our own maintenance embed
+      const maintenanceEmbed = new EmbedBuilder()
+        .setTitle(`Updating to v${version}...`)
+        .setColor(0xf39c12) // Orange for maintenance
+        .setDescription('Bot is restarting with new changes. Please wait...')
+        .addFields(
+          { name: 'Version', value: version || 'Unknown', inline: true },
+          {
+            name: 'Commit',
+            value: commitUrl ? `[${commitSha}](${commitUrl})` : commitSha || 'Unknown',
+            inline: true,
+          }
+        )
+        .setFooter({ text: 'Maintenance in progress...' })
+        .setTimestamp();
+
+      if (changelog) {
+        maintenanceEmbed.addFields({ name: 'Changes', value: changelog });
+      }
+
+      try {
+        const maintenanceMsg = await message.channel.send({ embeds: [maintenanceEmbed] });
+        console.log(`[MessageCreate] Posted maintenance embed: ${maintenanceMsg.id}`);
+
+        // Record deployment with maintenance message ID for later editing
+        recordDeploymentStarting(
+          version,
+          commitSha,
+          changelog,
+          commitUrl,
+          maintenanceMsg.id,
+          message.channel.id
+        );
+      } catch (err) {
+        console.error('[MessageCreate] Failed to post maintenance embed:', err);
+        // Still record deployment even if we couldn't post embed
+        recordDeploymentStarting(version, commitSha, changelog, commitUrl);
+      }
+
       return;
     }
 

@@ -25,6 +25,8 @@ interface DeploymentInfo {
   commitSha?: string;
   changelog?: string;
   commitUrl?: string;
+  maintenanceMessageId?: string;
+  maintenanceChannelId?: string;
 }
 
 /**
@@ -78,7 +80,9 @@ export function recordDeploymentStarting(
   version?: string,
   commitSha?: string,
   changelog?: string,
-  commitUrl?: string
+  commitUrl?: string,
+  maintenanceMessageId?: string,
+  maintenanceChannelId?: string
 ): void {
   const info: DeploymentInfo = {
     timestamp: new Date().toISOString(),
@@ -86,6 +90,8 @@ export function recordDeploymentStarting(
     commitSha,
     changelog,
     commitUrl,
+    maintenanceMessageId,
+    maintenanceChannelId,
   };
 
   try {
@@ -93,7 +99,9 @@ export function recordDeploymentStarting(
     fs.writeSync(fd, JSON.stringify(info, null, 2));
     fs.fsyncSync(fd);
     fs.closeSync(fd);
-    console.log(`[Startup] Recorded deployment: v${version} (${commitSha})`);
+    console.log(
+      `[Startup] Recorded deployment: v${version} (${commitSha}), msg: ${maintenanceMessageId}`
+    );
   } catch (err) {
     console.error('[Startup] Failed to record deployment start:', err);
   }
@@ -132,46 +140,51 @@ function getLastShutdown(): ShutdownInfo | null {
 }
 
 /**
- * Look for recent deployment webhook in #bot-logs and parse info from it
+ * Look for recent maintenance embed in #bot-logs posted by our bot
  * This is a fallback when the deployment file doesn't persist across container restarts
  */
-async function findRecentDeploymentWebhook(channel: TextChannel): Promise<DeploymentInfo | null> {
+async function findRecentMaintenanceEmbed(
+  channel: TextChannel,
+  botId: string
+): Promise<DeploymentInfo | null> {
   try {
     // Fetch recent messages (last 10)
     const messages = await channel.messages.fetch({ limit: 10 });
 
-    // Look for deployment webhook message (within last 5 minutes)
+    // Look for maintenance embed (within last 5 minutes)
     const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
 
     for (const [, message] of messages) {
-      // Must be a webhook message
-      if (!message.webhookId) continue;
+      // Must be from our bot
+      if (message.author.id !== botId) continue;
 
       // Must be recent
       if (message.createdTimestamp < fiveMinutesAgo) continue;
 
-      // Check for deployment marker
-      const content = message.content || '';
-      if (!content.startsWith('DEPLOYMENT_START|')) continue;
+      // Check for maintenance embed (title starts with "Updating to v")
+      const embed = message.embeds[0];
+      if (!embed?.title?.startsWith('Updating to v')) continue;
 
-      console.log('[Startup] Found deployment webhook in channel history');
+      console.log('[Startup] Found maintenance embed in channel history');
 
-      // Parse from content: DEPLOYMENT_START|version|sha
-      const parts = content.split('|');
-      const version = parts[1];
-      const commitSha = parts[2];
+      // Parse version from title: "Updating to v1.2.3..."
+      const versionMatch = embed.title.match(/Updating to v([\d.]+)/);
+      const version = versionMatch ? versionMatch[1] : undefined;
 
       // Parse from embed fields
+      let commitSha: string | undefined;
       let changelog: string | undefined;
       let commitUrl: string | undefined;
 
-      const embed = message.embeds[0];
-      if (embed?.fields) {
+      if (embed.fields) {
         for (const field of embed.fields) {
           if (field.name === 'Commit') {
             const match = field.value.match(/\[([^\]]+)\]\(([^)]+)\)/);
             if (match) {
+              commitSha = match[1];
               commitUrl = match[2];
+            } else {
+              commitSha = field.value;
             }
           }
           if (field.name === 'Changes') {
@@ -186,10 +199,12 @@ async function findRecentDeploymentWebhook(channel: TextChannel): Promise<Deploy
         commitSha,
         changelog,
         commitUrl,
+        maintenanceMessageId: message.id,
+        maintenanceChannelId: channel.id,
       };
     }
   } catch (err) {
-    console.error('[Startup] Failed to search for deployment webhook:', err);
+    console.error('[Startup] Failed to search for maintenance embed:', err);
   }
   return null;
 }
@@ -227,11 +242,16 @@ export async function sendStartupMessage(client: Client): Promise<void> {
   // Try to get deployment info from file first, then fallback to Discord message
   let deploymentStart = getDeploymentStart();
   if (!deploymentStart || !deploymentStart.version) {
-    console.log('[Startup] No deployment file found, checking Discord for recent webhook...');
-    deploymentStart = await findRecentDeploymentWebhook(botLogsChannel);
+    console.log(
+      '[Startup] No deployment file found, checking Discord for recent maintenance embed...'
+    );
+    const botId = client.user?.id;
+    if (botId) {
+      deploymentStart = await findRecentMaintenanceEmbed(botLogsChannel, botId);
+    }
   }
 
-  // Build embed based on whether this is a deployment or regular start
+  // Build the result embed
   const embed = new EmbedBuilder().setTimestamp();
 
   if (deploymentStart && deploymentStart.version) {
@@ -244,7 +264,7 @@ export async function sendStartupMessage(client: Client): Promise<void> {
 
     embed
       .setTitle(`Corvid Updated to v${deploymentStart.version}`)
-      .setColor(0x3498db) // Blue for deployment
+      .setColor(0x2ecc71) // Green for success
       .setDescription('Bot is now online with the latest changes.');
 
     // Version and commit info
@@ -266,7 +286,6 @@ export async function sendStartupMessage(client: Client): Promise<void> {
 
     // Changelog
     if (deploymentStart.changelog) {
-      // Truncate changelog if too long
       const changelog =
         deploymentStart.changelog.length > 800
           ? deploymentStart.changelog.slice(0, 800) + '...'
@@ -279,6 +298,23 @@ export async function sendStartupMessage(client: Client): Promise<void> {
       name: 'Links',
       value: '[View Releases](https://github.com/Pix-Elated/corvid/releases)',
     });
+
+    // Try to EDIT the maintenance message instead of posting new
+    if (deploymentStart.maintenanceMessageId && deploymentStart.maintenanceChannelId) {
+      try {
+        const channel = client.channels.cache.get(deploymentStart.maintenanceChannelId) as
+          | TextChannel
+          | undefined;
+        if (channel) {
+          const maintenanceMsg = await channel.messages.fetch(deploymentStart.maintenanceMessageId);
+          await maintenanceMsg.edit({ embeds: [embed] });
+          console.log('[Startup] Edited maintenance embed with update results');
+          return;
+        }
+      } catch (err) {
+        console.error('[Startup] Failed to edit maintenance message, will post new:', err);
+      }
+    }
   } else if (lastShutdown) {
     // Regular restart (not a deployment)
     const shutdownTime = new Date(lastShutdown.timestamp);
