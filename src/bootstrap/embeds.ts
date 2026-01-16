@@ -5,14 +5,41 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  Client,
 } from 'discord.js';
-import { getCardMessageId, setCardMessageId } from '../info-cards';
+import { setCardMessageId } from '../info-cards';
 
 interface EmbedPostResult {
   posted: string[];
   updated: string[];
   skipped: string[];
   errors: string[];
+}
+
+/**
+ * Delete ALL messages from our bot in a channel
+ * This ensures we don't leave duplicate embeds behind
+ */
+async function deleteAllBotMessages(channel: TextChannel, client: Client): Promise<number> {
+  let deleted = 0;
+  try {
+    // Fetch last 100 messages (should be more than enough for embed channels)
+    const messages = await channel.messages.fetch({ limit: 100 });
+    const botMessages = messages.filter((m) => m.author.id === client.user?.id);
+
+    for (const [, msg] of botMessages) {
+      try {
+        await msg.delete();
+        deleted++;
+        console.log(`[Embeds] Deleted bot message ${msg.id} from #${channel.name}`);
+      } catch (e) {
+        console.error(`[Embeds] Failed to delete message ${msg.id}:`, e);
+      }
+    }
+  } catch (e) {
+    console.error(`[Embeds] Failed to fetch messages from #${channel.name}:`, e);
+  }
+  return deleted;
 }
 
 /**
@@ -297,7 +324,7 @@ const EMBED_CONFIGS: EmbedConfig[] = [
  * Post or update all embeds in their respective channels
  * Tracks message IDs to update existing embeds on subsequent runs
  */
-export async function postBootstrapEmbeds(guild: Guild): Promise<EmbedPostResult> {
+export async function postBootstrapEmbeds(guild: Guild, client: Client): Promise<EmbedPostResult> {
   const result: EmbedPostResult = {
     posted: [],
     updated: [],
@@ -306,199 +333,104 @@ export async function postBootstrapEmbeds(guild: Guild): Promise<EmbedPostResult
   };
 
   // Post verification panel
+  // ALWAYS delete all existing bot messages first to prevent duplicates
   try {
     const verifyChannel = guild.channels.cache.find(
       (ch) => ch.name === 'verify-here' && ch instanceof TextChannel
     ) as TextChannel | undefined;
 
     if (verifyChannel) {
+      // Delete ALL bot messages in this channel first
+      const deletedCount = await deleteAllBotMessages(verifyChannel, client);
+      if (deletedCount > 0) {
+        console.log(`[Embeds] Cleaned up ${deletedCount} old bot messages from #verify-here`);
+      }
+
+      // Now post fresh embed
       const { embed, row } = getVerificationEmbed(guild);
-      const existingId = getCardMessageId('verify-here');
-      let shouldPost = true;
-
-      if (existingId) {
-        try {
-          const existingMessage = await verifyChannel.messages.fetch(existingId);
-          try {
-            await existingMessage.edit({ embeds: [embed], components: [row] });
-            result.updated.push('verify-here');
-            shouldPost = false;
-          } catch {
-            // Edit failed - try to delete old message before posting new
-            console.log('[Embeds] Edit failed for verify-here, attempting delete...');
-            try {
-              await existingMessage.delete();
-              console.log('[Embeds] Deleted old verify-here message');
-            } catch (deleteError) {
-              console.error('[Embeds] Failed to delete verify-here:', deleteError);
-              shouldPost = false;
-              result.errors.push('verify-here: Could not update or delete existing message');
-            }
-          }
-        } catch {
-          // Message was deleted/not found - safe to post new
-          console.log('[Embeds] Existing verify-here message not found, will post new');
-        }
-      }
-
-      if (shouldPost) {
-        const message = await verifyChannel.send({ embeds: [embed], components: [row] });
-        setCardMessageId('verify-here', message.id);
-        result.posted.push('verify-here');
-      }
+      const message = await verifyChannel.send({ embeds: [embed], components: [row] });
+      setCardMessageId('verify-here', message.id);
+      result.posted.push('verify-here');
     }
   } catch (error) {
     result.errors.push(`verify-here: ${error}`);
   }
 
   // Post support panel with private ticket button to support-general
+  // ALWAYS delete all existing bot messages first to prevent duplicates
   try {
     const supportChannel = guild.channels.cache.find(
       (ch) => ch.name === 'support-general' && ch instanceof TextChannel
     ) as TextChannel | undefined;
 
     if (supportChannel) {
+      // Delete ALL bot messages in this channel first
+      const deletedCount = await deleteAllBotMessages(supportChannel, client);
+      if (deletedCount > 0) {
+        console.log(`[Embeds] Cleaned up ${deletedCount} old bot messages from #support-general`);
+      }
+
+      // Now post fresh embed
       const { embed, row } = getSupportGeneralPanel();
-      const existingId = getCardMessageId('support-general');
-      let shouldPost = true;
-
-      if (existingId) {
-        try {
-          const existingMessage = await supportChannel.messages.fetch(existingId);
-          try {
-            await existingMessage.edit({ embeds: [embed], components: [row] });
-            result.updated.push('support-general');
-            shouldPost = false;
-            // Ensure message is pinned
-            if (!existingMessage.pinned) {
-              await existingMessage
-                .pin()
-                .catch((e) => console.error('[Embeds] Failed to pin support-general:', e));
-            }
-          } catch {
-            // Edit failed - try to delete old message before posting new
-            console.log('[Embeds] Edit failed for support-general, attempting delete...');
-            try {
-              await existingMessage.delete();
-              console.log('[Embeds] Deleted old support-general message');
-            } catch (deleteError) {
-              console.error('[Embeds] Failed to delete support-general:', deleteError);
-              shouldPost = false;
-              result.errors.push('support-general: Could not update or delete existing message');
-            }
-          }
-        } catch {
-          // Message was deleted/not found - safe to post new
-          console.log('[Embeds] Existing support-general message not found, will post new');
-        }
-      }
-
-      if (shouldPost) {
-        const message = await supportChannel.send({ embeds: [embed], components: [row] });
-        setCardMessageId('support-general', message.id);
-        await message
-          .pin()
-          .catch((e) => console.error('[Embeds] Failed to pin support-general:', e));
-        result.posted.push('support-general');
-      }
+      const message = await supportChannel.send({ embeds: [embed], components: [row] });
+      setCardMessageId('support-general', message.id);
+      await message.pin().catch((e) => console.error('[Embeds] Failed to pin support-general:', e));
+      result.posted.push('support-general');
     }
   } catch (error) {
     result.errors.push(`support-general: ${error}`);
   }
 
   // Post bug reports panel with button
+  // ALWAYS delete all existing bot messages first to prevent duplicates
   try {
     const bugChannel = guild.channels.cache.find(
       (ch) => ch.name === 'bug-reports' && ch instanceof TextChannel
     ) as TextChannel | undefined;
 
     if (bugChannel) {
+      // Delete ALL bot messages in this channel first
+      const deletedCount = await deleteAllBotMessages(bugChannel, client);
+      if (deletedCount > 0) {
+        console.log(`[Embeds] Cleaned up ${deletedCount} old bot messages from #bug-reports`);
+      }
+
+      // Now post fresh embed
       const { embed, row } = getBugReportsPanel();
-      const existingId = getCardMessageId('bug-reports');
-      let shouldPost = true;
-
-      if (existingId) {
-        try {
-          const existingMessage = await bugChannel.messages.fetch(existingId);
-          try {
-            await existingMessage.edit({ embeds: [embed], components: [row] });
-            result.updated.push('bug-reports');
-            shouldPost = false;
-          } catch {
-            // Edit failed - try to delete old message before posting new
-            console.log('[Embeds] Edit failed for bug-reports, attempting delete...');
-            try {
-              await existingMessage.delete();
-              console.log('[Embeds] Deleted old bug-reports message');
-            } catch (deleteError) {
-              console.error('[Embeds] Failed to delete bug-reports:', deleteError);
-              shouldPost = false;
-              result.errors.push('bug-reports: Could not update or delete existing message');
-            }
-          }
-        } catch {
-          // Message was deleted/not found - safe to post new
-          console.log('[Embeds] Existing bug-reports message not found, will post new');
-        }
-      }
-
-      if (shouldPost) {
-        const message = await bugChannel.send({ embeds: [embed], components: [row] });
-        setCardMessageId('bug-reports', message.id);
-        result.posted.push('bug-reports');
-      }
+      const message = await bugChannel.send({ embeds: [embed], components: [row] });
+      setCardMessageId('bug-reports', message.id);
+      result.posted.push('bug-reports');
     }
   } catch (error) {
     result.errors.push(`bug-reports: ${error}`);
   }
 
   // Post feature requests panel with button
+  // ALWAYS delete all existing bot messages first to prevent duplicates
   try {
     const featureChannel = guild.channels.cache.find(
       (ch) => ch.name === 'feature-requests' && ch instanceof TextChannel
     ) as TextChannel | undefined;
 
     if (featureChannel) {
+      // Delete ALL bot messages in this channel first
+      const deletedCount = await deleteAllBotMessages(featureChannel, client);
+      if (deletedCount > 0) {
+        console.log(`[Embeds] Cleaned up ${deletedCount} old bot messages from #feature-requests`);
+      }
+
+      // Now post fresh embed
       const { embed, row } = getFeatureRequestsPanel();
-      const existingId = getCardMessageId('feature-requests');
-      let shouldPost = true;
-
-      if (existingId) {
-        try {
-          const existingMessage = await featureChannel.messages.fetch(existingId);
-          try {
-            await existingMessage.edit({ embeds: [embed], components: [row] });
-            result.updated.push('feature-requests');
-            shouldPost = false;
-          } catch {
-            // Edit failed - try to delete old message before posting new
-            console.log('[Embeds] Edit failed for feature-requests, attempting delete...');
-            try {
-              await existingMessage.delete();
-              console.log('[Embeds] Deleted old feature-requests message');
-            } catch (deleteError) {
-              console.error('[Embeds] Failed to delete feature-requests:', deleteError);
-              shouldPost = false;
-              result.errors.push('feature-requests: Could not update or delete existing message');
-            }
-          }
-        } catch {
-          // Message was deleted/not found - safe to post new
-          console.log('[Embeds] Existing feature-requests message not found, will post new');
-        }
-      }
-
-      if (shouldPost) {
-        const message = await featureChannel.send({ embeds: [embed], components: [row] });
-        setCardMessageId('feature-requests', message.id);
-        result.posted.push('feature-requests');
-      }
+      const message = await featureChannel.send({ embeds: [embed], components: [row] });
+      setCardMessageId('feature-requests', message.id);
+      result.posted.push('feature-requests');
     }
   } catch (error) {
     result.errors.push(`feature-requests: ${error}`);
   }
 
   // Post info cards
+  // ALWAYS delete all existing bot messages first to prevent duplicates
   for (const config of EMBED_CONFIGS) {
     try {
       const channel = guild.channels.cache.find(
@@ -509,44 +441,19 @@ export async function postBootstrapEmbeds(guild: Guild): Promise<EmbedPostResult
         continue;
       }
 
+      // Delete ALL bot messages in this channel first
+      const deletedCount = await deleteAllBotMessages(channel, client);
+      if (deletedCount > 0) {
+        console.log(
+          `[Embeds] Cleaned up ${deletedCount} old bot messages from #${config.channelName}`
+        );
+      }
+
+      // Now post fresh embed
       const embed = config.getEmbed(guild);
-      const existingId = getCardMessageId(config.channelName);
-
-      let shouldPost = true;
-
-      if (existingId) {
-        try {
-          const existingMessage = await channel.messages.fetch(existingId);
-          try {
-            await existingMessage.edit({ embeds: [embed] });
-            result.updated.push(config.channelName);
-            shouldPost = false;
-          } catch (editError) {
-            // Edit failed - try to delete old message before posting new
-            console.log(`[Embeds] Edit failed for ${config.channelName}, attempting delete...`);
-            try {
-              await existingMessage.delete();
-              console.log(`[Embeds] Deleted old ${config.channelName} message`);
-            } catch (deleteError) {
-              console.error(`[Embeds] Failed to delete ${config.channelName}:`, deleteError);
-              // Don't post a new one if we couldn't delete the old one - prevents duplicates
-              shouldPost = false;
-              result.errors.push(
-                `${config.channelName}: Could not update or delete existing message`
-              );
-            }
-          }
-        } catch {
-          // Message was deleted/not found - safe to post new
-          console.log(`[Embeds] Existing ${config.channelName} message not found, will post new`);
-        }
-      }
-
-      if (shouldPost) {
-        const message = await channel.send({ embeds: [embed] });
-        setCardMessageId(config.channelName, message.id);
-        result.posted.push(config.channelName);
-      }
+      const message = await channel.send({ embeds: [embed] });
+      setCardMessageId(config.channelName, message.id);
+      result.posted.push(config.channelName);
     } catch (error) {
       result.errors.push(`${config.channelName}: ${error}`);
     }

@@ -70,7 +70,7 @@ export async function bootstrapServer(guild: Guild): Promise<BootstrapResult> {
 
     // Step 5: Post embeds (verification, tickets, info cards)
     console.log('[Bootstrap] Step 5: Posting embeds...');
-    const embedResult = await postBootstrapEmbeds(guild);
+    const embedResult = await postBootstrapEmbeds(guild, guild.client);
     result.embedsPosted = embedResult.posted;
     result.embedsUpdated = embedResult.updated;
     result.embedsSkipped = embedResult.skipped;
