@@ -132,6 +132,69 @@ function getLastShutdown(): ShutdownInfo | null {
 }
 
 /**
+ * Look for recent deployment webhook in #bot-logs and parse info from it
+ * This is a fallback when the deployment file doesn't persist across container restarts
+ */
+async function findRecentDeploymentWebhook(channel: TextChannel): Promise<DeploymentInfo | null> {
+  try {
+    // Fetch recent messages (last 10)
+    const messages = await channel.messages.fetch({ limit: 10 });
+
+    // Look for deployment webhook message (within last 5 minutes)
+    const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
+
+    for (const [, message] of messages) {
+      // Must be a webhook message
+      if (!message.webhookId) continue;
+
+      // Must be recent
+      if (message.createdTimestamp < fiveMinutesAgo) continue;
+
+      // Check for deployment marker
+      const content = message.content || '';
+      if (!content.startsWith('DEPLOYMENT_START|')) continue;
+
+      console.log('[Startup] Found deployment webhook in channel history');
+
+      // Parse from content: DEPLOYMENT_START|version|sha
+      const parts = content.split('|');
+      const version = parts[1];
+      const commitSha = parts[2];
+
+      // Parse from embed fields
+      let changelog: string | undefined;
+      let commitUrl: string | undefined;
+
+      const embed = message.embeds[0];
+      if (embed?.fields) {
+        for (const field of embed.fields) {
+          if (field.name === 'Commit') {
+            const match = field.value.match(/\[([^\]]+)\]\(([^)]+)\)/);
+            if (match) {
+              commitUrl = match[2];
+            }
+          }
+          if (field.name === 'Changes') {
+            changelog = field.value;
+          }
+        }
+      }
+
+      return {
+        timestamp: message.createdAt.toISOString(),
+        version,
+        commitSha,
+        changelog,
+        commitUrl,
+      };
+    }
+  } catch (err) {
+    console.error('[Startup] Failed to search for deployment webhook:', err);
+  }
+  return null;
+}
+
+/**
  * Send startup notification to bot-logs channel
  */
 export async function sendStartupMessage(client: Client): Promise<void> {
@@ -160,7 +223,13 @@ export async function sendStartupMessage(client: Client): Promise<void> {
   }
 
   const lastShutdown = getLastShutdown();
-  const deploymentStart = getDeploymentStart();
+
+  // Try to get deployment info from file first, then fallback to Discord message
+  let deploymentStart = getDeploymentStart();
+  if (!deploymentStart || !deploymentStart.version) {
+    console.log('[Startup] No deployment file found, checking Discord for recent webhook...');
+    deploymentStart = await findRecentDeploymentWebhook(botLogsChannel);
+  }
 
   // Build embed based on whether this is a deployment or regular start
   const embed = new EmbedBuilder().setTimestamp();
