@@ -42,7 +42,9 @@ export async function handleMessageCreate(message: Message): Promise<void> {
     const embedTitle = message.embeds[0]?.title?.toLowerCase() || '';
 
     if (content.includes('deployment starting') || embedTitle.includes('deployment starting')) {
-      console.log('[MessageCreate] Detected deployment webhook, recording timestamp');
+      console.log(
+        '[MessageCreate] Deployment webhook detected, saving timestamp for downtime tracking'
+      );
       recordDeploymentStarting();
 
       // React to acknowledge
