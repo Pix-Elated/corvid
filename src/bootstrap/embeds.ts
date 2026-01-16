@@ -318,10 +318,18 @@ export async function postBootstrapEmbeds(guild: Guild): Promise<EmbedPostResult
       if (existingId) {
         try {
           const existingMessage = await verifyChannel.messages.fetch(existingId);
-          await existingMessage.edit({ embeds: [embed], components: [row] });
-          result.updated.push('verify-here');
+          try {
+            await existingMessage.edit({ embeds: [embed], components: [row] });
+            result.updated.push('verify-here');
+          } catch {
+            // Edit failed - delete old message before posting new
+            await existingMessage.delete().catch(() => {});
+            const message = await verifyChannel.send({ embeds: [embed], components: [row] });
+            setCardMessageId('verify-here', message.id);
+            result.posted.push('verify-here');
+          }
         } catch {
-          // Message was deleted, post new one
+          // Message was deleted/not found - just post new
           const message = await verifyChannel.send({ embeds: [embed], components: [row] });
           setCardMessageId('verify-here', message.id);
           result.posted.push('verify-here');
@@ -349,17 +357,32 @@ export async function postBootstrapEmbeds(guild: Guild): Promise<EmbedPostResult
       if (existingId) {
         try {
           const existingMessage = await supportChannel.messages.fetch(existingId);
-          await existingMessage.edit({ embeds: [embed], components: [row] });
-          result.updated.push('support-general');
+          try {
+            await existingMessage.edit({ embeds: [embed], components: [row] });
+            result.updated.push('support-general');
+            // Ensure message is pinned
+            if (!existingMessage.pinned) {
+              await existingMessage.pin().catch(() => {});
+            }
+          } catch {
+            // Edit failed - delete old message before posting new
+            await existingMessage.delete().catch(() => {});
+            const message = await supportChannel.send({ embeds: [embed], components: [row] });
+            setCardMessageId('support-general', message.id);
+            await message.pin().catch(() => {});
+            result.posted.push('support-general');
+          }
         } catch {
-          // Message was deleted, post new one
+          // Message was deleted/not found - just post new
           const message = await supportChannel.send({ embeds: [embed], components: [row] });
           setCardMessageId('support-general', message.id);
+          await message.pin().catch(() => {});
           result.posted.push('support-general');
         }
       } else {
         const message = await supportChannel.send({ embeds: [embed], components: [row] });
         setCardMessageId('support-general', message.id);
+        await message.pin().catch(() => {});
         result.posted.push('support-general');
       }
     }
@@ -380,10 +403,18 @@ export async function postBootstrapEmbeds(guild: Guild): Promise<EmbedPostResult
       if (existingId) {
         try {
           const existingMessage = await bugChannel.messages.fetch(existingId);
-          await existingMessage.edit({ embeds: [embed], components: [row] });
-          result.updated.push('bug-reports');
+          try {
+            await existingMessage.edit({ embeds: [embed], components: [row] });
+            result.updated.push('bug-reports');
+          } catch {
+            // Edit failed - delete old message before posting new
+            await existingMessage.delete().catch(() => {});
+            const message = await bugChannel.send({ embeds: [embed], components: [row] });
+            setCardMessageId('bug-reports', message.id);
+            result.posted.push('bug-reports');
+          }
         } catch {
-          // Message was deleted, post new one
+          // Message was deleted/not found - just post new
           const message = await bugChannel.send({ embeds: [embed], components: [row] });
           setCardMessageId('bug-reports', message.id);
           result.posted.push('bug-reports');
@@ -411,10 +442,18 @@ export async function postBootstrapEmbeds(guild: Guild): Promise<EmbedPostResult
       if (existingId) {
         try {
           const existingMessage = await featureChannel.messages.fetch(existingId);
-          await existingMessage.edit({ embeds: [embed], components: [row] });
-          result.updated.push('feature-requests');
+          try {
+            await existingMessage.edit({ embeds: [embed], components: [row] });
+            result.updated.push('feature-requests');
+          } catch {
+            // Edit failed - delete old message before posting new
+            await existingMessage.delete().catch(() => {});
+            const message = await featureChannel.send({ embeds: [embed], components: [row] });
+            setCardMessageId('feature-requests', message.id);
+            result.posted.push('feature-requests');
+          }
         } catch {
-          // Message was deleted, post new one
+          // Message was deleted/not found - just post new
           const message = await featureChannel.send({ embeds: [embed], components: [row] });
           setCardMessageId('feature-requests', message.id);
           result.posted.push('feature-requests');
@@ -446,11 +485,16 @@ export async function postBootstrapEmbeds(guild: Guild): Promise<EmbedPostResult
       if (existingId) {
         try {
           const existingMessage = await channel.messages.fetch(existingId);
-          await existingMessage.edit({ embeds: [embed] });
-          result.updated.push(config.channelName);
-          continue;
+          try {
+            await existingMessage.edit({ embeds: [embed] });
+            result.updated.push(config.channelName);
+            continue;
+          } catch {
+            // Edit failed - delete old message before posting new
+            await existingMessage.delete().catch(() => {});
+          }
         } catch {
-          // Card was deleted, post a new one
+          // Message was deleted/not found - just post new
         }
       }
 

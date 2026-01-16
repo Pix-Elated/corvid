@@ -25,6 +25,7 @@ import {
   handleConvertToTicket,
   handleConvertModal,
 } from './ticketHandler';
+import { handlePublishButton, handlePublishModal, handleDiscardButton } from './releaseHandler';
 
 const VERIFIED_ROLE_NAME = 'Verified';
 
@@ -141,6 +142,16 @@ export async function handleInteractionCreate(interaction: Interaction): Promise
       return;
     }
 
+    // Release announcement buttons
+    if (buttonId === 'release_publish') {
+      await handlePublishButton(interaction);
+      return;
+    }
+    if (buttonId === 'release_discard') {
+      await handleDiscardButton(interaction);
+      return;
+    }
+
     return;
   }
 
@@ -152,6 +163,10 @@ export async function handleInteractionCreate(interaction: Interaction): Promise
     }
     if (interaction.customId.startsWith('convert_modal_')) {
       await handleConvertModal(interaction);
+      return;
+    }
+    if (interaction.customId === 'release_modal') {
+      await handlePublishModal(interaction);
       return;
     }
     return;
