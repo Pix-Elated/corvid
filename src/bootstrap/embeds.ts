@@ -314,6 +314,7 @@ export async function postBootstrapEmbeds(guild: Guild): Promise<EmbedPostResult
     if (verifyChannel) {
       const { embed, row } = getVerificationEmbed(guild);
       const existingId = getCardMessageId('verify-here');
+      let shouldPost = true;
 
       if (existingId) {
         try {
@@ -321,20 +322,26 @@ export async function postBootstrapEmbeds(guild: Guild): Promise<EmbedPostResult
           try {
             await existingMessage.edit({ embeds: [embed], components: [row] });
             result.updated.push('verify-here');
+            shouldPost = false;
           } catch {
-            // Edit failed - delete old message before posting new
-            await existingMessage.delete().catch(() => {});
-            const message = await verifyChannel.send({ embeds: [embed], components: [row] });
-            setCardMessageId('verify-here', message.id);
-            result.posted.push('verify-here');
+            // Edit failed - try to delete old message before posting new
+            console.log('[Embeds] Edit failed for verify-here, attempting delete...');
+            try {
+              await existingMessage.delete();
+              console.log('[Embeds] Deleted old verify-here message');
+            } catch (deleteError) {
+              console.error('[Embeds] Failed to delete verify-here:', deleteError);
+              shouldPost = false;
+              result.errors.push('verify-here: Could not update or delete existing message');
+            }
           }
         } catch {
-          // Message was deleted/not found - just post new
-          const message = await verifyChannel.send({ embeds: [embed], components: [row] });
-          setCardMessageId('verify-here', message.id);
-          result.posted.push('verify-here');
+          // Message was deleted/not found - safe to post new
+          console.log('[Embeds] Existing verify-here message not found, will post new');
         }
-      } else {
+      }
+
+      if (shouldPost) {
         const message = await verifyChannel.send({ embeds: [embed], components: [row] });
         setCardMessageId('verify-here', message.id);
         result.posted.push('verify-here');
@@ -353,6 +360,7 @@ export async function postBootstrapEmbeds(guild: Guild): Promise<EmbedPostResult
     if (supportChannel) {
       const { embed, row } = getSupportGeneralPanel();
       const existingId = getCardMessageId('support-general');
+      let shouldPost = true;
 
       if (existingId) {
         try {
@@ -360,29 +368,37 @@ export async function postBootstrapEmbeds(guild: Guild): Promise<EmbedPostResult
           try {
             await existingMessage.edit({ embeds: [embed], components: [row] });
             result.updated.push('support-general');
+            shouldPost = false;
             // Ensure message is pinned
             if (!existingMessage.pinned) {
-              await existingMessage.pin().catch(() => {});
+              await existingMessage
+                .pin()
+                .catch((e) => console.error('[Embeds] Failed to pin support-general:', e));
             }
           } catch {
-            // Edit failed - delete old message before posting new
-            await existingMessage.delete().catch(() => {});
-            const message = await supportChannel.send({ embeds: [embed], components: [row] });
-            setCardMessageId('support-general', message.id);
-            await message.pin().catch(() => {});
-            result.posted.push('support-general');
+            // Edit failed - try to delete old message before posting new
+            console.log('[Embeds] Edit failed for support-general, attempting delete...');
+            try {
+              await existingMessage.delete();
+              console.log('[Embeds] Deleted old support-general message');
+            } catch (deleteError) {
+              console.error('[Embeds] Failed to delete support-general:', deleteError);
+              shouldPost = false;
+              result.errors.push('support-general: Could not update or delete existing message');
+            }
           }
         } catch {
-          // Message was deleted/not found - just post new
-          const message = await supportChannel.send({ embeds: [embed], components: [row] });
-          setCardMessageId('support-general', message.id);
-          await message.pin().catch(() => {});
-          result.posted.push('support-general');
+          // Message was deleted/not found - safe to post new
+          console.log('[Embeds] Existing support-general message not found, will post new');
         }
-      } else {
+      }
+
+      if (shouldPost) {
         const message = await supportChannel.send({ embeds: [embed], components: [row] });
         setCardMessageId('support-general', message.id);
-        await message.pin().catch(() => {});
+        await message
+          .pin()
+          .catch((e) => console.error('[Embeds] Failed to pin support-general:', e));
         result.posted.push('support-general');
       }
     }
@@ -399,6 +415,7 @@ export async function postBootstrapEmbeds(guild: Guild): Promise<EmbedPostResult
     if (bugChannel) {
       const { embed, row } = getBugReportsPanel();
       const existingId = getCardMessageId('bug-reports');
+      let shouldPost = true;
 
       if (existingId) {
         try {
@@ -406,20 +423,26 @@ export async function postBootstrapEmbeds(guild: Guild): Promise<EmbedPostResult
           try {
             await existingMessage.edit({ embeds: [embed], components: [row] });
             result.updated.push('bug-reports');
+            shouldPost = false;
           } catch {
-            // Edit failed - delete old message before posting new
-            await existingMessage.delete().catch(() => {});
-            const message = await bugChannel.send({ embeds: [embed], components: [row] });
-            setCardMessageId('bug-reports', message.id);
-            result.posted.push('bug-reports');
+            // Edit failed - try to delete old message before posting new
+            console.log('[Embeds] Edit failed for bug-reports, attempting delete...');
+            try {
+              await existingMessage.delete();
+              console.log('[Embeds] Deleted old bug-reports message');
+            } catch (deleteError) {
+              console.error('[Embeds] Failed to delete bug-reports:', deleteError);
+              shouldPost = false;
+              result.errors.push('bug-reports: Could not update or delete existing message');
+            }
           }
         } catch {
-          // Message was deleted/not found - just post new
-          const message = await bugChannel.send({ embeds: [embed], components: [row] });
-          setCardMessageId('bug-reports', message.id);
-          result.posted.push('bug-reports');
+          // Message was deleted/not found - safe to post new
+          console.log('[Embeds] Existing bug-reports message not found, will post new');
         }
-      } else {
+      }
+
+      if (shouldPost) {
         const message = await bugChannel.send({ embeds: [embed], components: [row] });
         setCardMessageId('bug-reports', message.id);
         result.posted.push('bug-reports');
@@ -438,6 +461,7 @@ export async function postBootstrapEmbeds(guild: Guild): Promise<EmbedPostResult
     if (featureChannel) {
       const { embed, row } = getFeatureRequestsPanel();
       const existingId = getCardMessageId('feature-requests');
+      let shouldPost = true;
 
       if (existingId) {
         try {
@@ -445,20 +469,26 @@ export async function postBootstrapEmbeds(guild: Guild): Promise<EmbedPostResult
           try {
             await existingMessage.edit({ embeds: [embed], components: [row] });
             result.updated.push('feature-requests');
+            shouldPost = false;
           } catch {
-            // Edit failed - delete old message before posting new
-            await existingMessage.delete().catch(() => {});
-            const message = await featureChannel.send({ embeds: [embed], components: [row] });
-            setCardMessageId('feature-requests', message.id);
-            result.posted.push('feature-requests');
+            // Edit failed - try to delete old message before posting new
+            console.log('[Embeds] Edit failed for feature-requests, attempting delete...');
+            try {
+              await existingMessage.delete();
+              console.log('[Embeds] Deleted old feature-requests message');
+            } catch (deleteError) {
+              console.error('[Embeds] Failed to delete feature-requests:', deleteError);
+              shouldPost = false;
+              result.errors.push('feature-requests: Could not update or delete existing message');
+            }
           }
         } catch {
-          // Message was deleted/not found - just post new
-          const message = await featureChannel.send({ embeds: [embed], components: [row] });
-          setCardMessageId('feature-requests', message.id);
-          result.posted.push('feature-requests');
+          // Message was deleted/not found - safe to post new
+          console.log('[Embeds] Existing feature-requests message not found, will post new');
         }
-      } else {
+      }
+
+      if (shouldPost) {
         const message = await featureChannel.send({ embeds: [embed], components: [row] });
         setCardMessageId('feature-requests', message.id);
         result.posted.push('feature-requests');
@@ -482,25 +512,41 @@ export async function postBootstrapEmbeds(guild: Guild): Promise<EmbedPostResult
       const embed = config.getEmbed(guild);
       const existingId = getCardMessageId(config.channelName);
 
+      let shouldPost = true;
+
       if (existingId) {
         try {
           const existingMessage = await channel.messages.fetch(existingId);
           try {
             await existingMessage.edit({ embeds: [embed] });
             result.updated.push(config.channelName);
-            continue;
-          } catch {
-            // Edit failed - delete old message before posting new
-            await existingMessage.delete().catch(() => {});
+            shouldPost = false;
+          } catch (editError) {
+            // Edit failed - try to delete old message before posting new
+            console.log(`[Embeds] Edit failed for ${config.channelName}, attempting delete...`);
+            try {
+              await existingMessage.delete();
+              console.log(`[Embeds] Deleted old ${config.channelName} message`);
+            } catch (deleteError) {
+              console.error(`[Embeds] Failed to delete ${config.channelName}:`, deleteError);
+              // Don't post a new one if we couldn't delete the old one - prevents duplicates
+              shouldPost = false;
+              result.errors.push(
+                `${config.channelName}: Could not update or delete existing message`
+              );
+            }
           }
         } catch {
-          // Message was deleted/not found - just post new
+          // Message was deleted/not found - safe to post new
+          console.log(`[Embeds] Existing ${config.channelName} message not found, will post new`);
         }
       }
 
-      const message = await channel.send({ embeds: [embed] });
-      setCardMessageId(config.channelName, message.id);
-      result.posted.push(config.channelName);
+      if (shouldPost) {
+        const message = await channel.send({ embeds: [embed] });
+        setCardMessageId(config.channelName, message.id);
+        result.posted.push(config.channelName);
+      }
     } catch (error) {
       result.errors.push(`${config.channelName}: ${error}`);
     }
