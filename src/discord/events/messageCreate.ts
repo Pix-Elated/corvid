@@ -5,6 +5,7 @@ import { updateStatus, updateMaintenance } from '../../state';
 import { updateTicketActivity } from '../../tickets';
 import { handleAutoMod } from './automod';
 import { handleReleaseWebhook } from './releaseHandler';
+import { recordDeploymentStarting } from '../startup';
 
 /**
  * Handle new messages - auto-mod and parse embeds from the source channel
@@ -30,8 +31,30 @@ export async function handleMessageCreate(message: Message): Promise<void> {
     updateTicketActivity(message.channel.id);
   }
 
-  // Check for release webhook messages in bot-logs
-  if (message.webhookId && message.channel instanceof TextChannel) {
+  // Check for webhook messages in bot-logs
+  if (
+    message.webhookId &&
+    message.channel instanceof TextChannel &&
+    message.channel.name === 'bot-logs'
+  ) {
+    // Check for deployment webhook (sent by GitHub Actions before deploy)
+    const content = message.content?.toLowerCase() || '';
+    const embedTitle = message.embeds[0]?.title?.toLowerCase() || '';
+
+    if (content.includes('deployment starting') || embedTitle.includes('deployment starting')) {
+      console.log('[MessageCreate] Detected deployment webhook, recording timestamp');
+      recordDeploymentStarting();
+
+      // React to acknowledge
+      try {
+        await message.react('✅');
+      } catch {
+        // Ignore reaction errors
+      }
+      return;
+    }
+
+    // Check for release webhook
     const wasReleaseWebhook = await handleReleaseWebhook(message);
     if (wasReleaseWebhook) {
       return;
