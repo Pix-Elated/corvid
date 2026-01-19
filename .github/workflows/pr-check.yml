@@ -119,7 +119,7 @@ jobs:
     if: needs.changes.outputs.code == 'false' && needs.changes.outputs.deps == 'false'
     steps:
       - name: Post skip notice
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             github.rest.issues.createComment({
