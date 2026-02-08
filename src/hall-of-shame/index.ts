@@ -1,44 +1,75 @@
-import { Guild, Client, TextChannel, EmbedBuilder, GuildBan } from 'discord.js';
+import { Guild, Client, TextChannel, EmbedBuilder } from 'discord.js';
 import { getCardMessageId, setCardMessageId } from '../info-cards';
 
 const CARD_KEY = 'hall-of-shame-banlist';
 const REFRESH_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
-const MAX_DISPLAY_BANS = 25; // Discord embed field limit
+const BAN_LIST_URL =
+  'https://raw.githubusercontent.com/Pix-Elated/ravenhud/master/data/hall-of-shame.json';
+
+interface BanEntry {
+  type: string;
+  name: string;
+  reason: string;
+  added: string;
+}
+
+interface BanListData {
+  version: number;
+  entries: BanEntry[];
+}
 
 let refreshInterval: ReturnType<typeof setInterval> | null = null;
 
 /**
- * Build an embed showing the server's ban list.
+ * Fetch the public ban list from the RavenHud website repo.
  */
-async function buildBanListEmbed(guild: Guild): Promise<EmbedBuilder> {
-  const bans = await guild.bans.fetch();
-  const banArray = [...bans.values()];
+async function fetchBanList(): Promise<BanEntry[]> {
+  const response = await fetch(BAN_LIST_URL);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch ban list: ${response.status} ${response.statusText}`);
+  }
+  const data = (await response.json()) as BanListData;
+  return data.entries ?? [];
+}
+
+/**
+ * Build an embed showing the public ban list from RavenHud.
+ */
+async function buildBanListEmbed(): Promise<EmbedBuilder> {
+  const entries = await fetchBanList();
 
   const embed = new EmbedBuilder()
-    .setTitle('🔨 Hall of Shame — Ban List')
-    .setColor(0xef4444) // Red
-    .setFooter({ text: `Refreshed daily • ${banArray.length} total bans` })
+    .setTitle('\uD83D\uDD28 Hall of Shame — Ban List')
+    .setColor(0xef4444)
+    .setFooter({ text: `Refreshed daily \u2022 ${entries.length} total entries` })
     .setTimestamp();
 
-  if (banArray.length === 0) {
-    embed.setDescription('No bans recorded. The community is spotless... for now.');
+  if (entries.length === 0) {
+    embed.setDescription('No entries recorded. The community is spotless... for now.');
     return embed;
   }
 
-  // Sort by most recent first (Discord returns them in order of ban)
-  // Format each ban as a line
-  const displayBans = banArray.slice(0, MAX_DISPLAY_BANS);
-  const lines = displayBans.map((ban: GuildBan) => {
-    const reason = ban.reason ? ban.reason.slice(0, 80) : 'No reason provided';
-    return `**${ban.user.tag}** — ${reason}`;
+  // Show all entries (Discord embed description limit is 4096 chars)
+  const lines = entries.map((entry) => {
+    const reason = entry.reason.length > 80 ? entry.reason.slice(0, 77) + '...' : entry.reason;
+    return `**${entry.name}** — ${reason}`;
   });
 
-  embed.setDescription(lines.join('\n'));
+  // Truncate if description would exceed Discord's 4096 char limit
+  let description = '';
+  let shown = 0;
+  for (const line of lines) {
+    if (description.length + line.length + 1 > 3900) break;
+    description += (shown > 0 ? '\n' : '') + line;
+    shown++;
+  }
 
-  if (banArray.length > MAX_DISPLAY_BANS) {
+  embed.setDescription(description);
+
+  if (shown < entries.length) {
     embed.addFields({
-      name: '\u200b', // zero-width space
-      value: `...and **${banArray.length - MAX_DISPLAY_BANS}** more.`,
+      name: '\u200b',
+      value: `...and **${entries.length - shown}** more.`,
     });
   }
 
@@ -58,7 +89,7 @@ export async function postOrUpdateBanList(guild: Guild, client: Client): Promise
     return;
   }
 
-  const embed = await buildBanListEmbed(guild);
+  const embed = await buildBanListEmbed();
   const trackedId = getCardMessageId(CARD_KEY);
 
   // Try to edit existing message
