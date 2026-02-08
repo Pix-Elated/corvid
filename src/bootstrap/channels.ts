@@ -110,9 +110,31 @@ export async function createChannelsInCategory(
         );
 
         if (existingChannel) {
-          console.log(
-            `[Channels] Channel "#${channelConfig.name}" already exists in "${category.name}", skipping`
-          );
+          // Sync channel-level permission overwrites if the config defines them
+          // (ensures new permissions like SendMessagesInThreads are applied on re-bootstrap)
+          if (channelConfig.permissionOverwrites && channelConfig.permissionOverwrites.length > 0) {
+            const permissionOverwrites = buildChannelPermissionOverwrites(
+              guild,
+              roleMap,
+              channelConfig.permissionOverwrites
+            );
+            if (permissionOverwrites.length > 0) {
+              try {
+                await (existingChannel as TextChannel).permissionOverwrites.set(
+                  permissionOverwrites,
+                  'Server bootstrap - permission sync'
+                );
+                console.log(
+                  `[Channels] Synced permissions for "#${channelConfig.name}" in "${category.name}"`
+                );
+              } catch (syncError) {
+                console.warn(
+                  `[Channels] Failed to sync permissions for "#${channelConfig.name}":`,
+                  syncError
+                );
+              }
+            }
+          }
           result.skipped.push(`${category.name}/${channelConfig.name}`);
           trackChannel(channelConfig.name, existingChannel.id);
           success = true;
