@@ -1,6 +1,5 @@
 import fs from 'fs';
 import path from 'path';
-import os from 'os';
 
 // Use DATA_PATH env var for persistent storage, fallback to cwd
 const DATA_DIR = process.env.DATA_PATH || process.cwd();
@@ -35,8 +34,9 @@ let currentState: ServerState = { ...defaultState };
  */
 function atomicWriteSync(filePath: string, data: string): void {
   const tempFile = path.join(
-    os.tmpdir(),
-    `server-state-${Date.now()}-${Math.random().toString(36)}.tmp`
+    // Same dir as target to avoid EXDEV on mounted volumes
+    path.dirname(filePath),
+    `.server-state-${Date.now()}-${Math.random().toString(36)}.tmp`
   );
   try {
     fs.writeFileSync(tempFile, data, 'utf-8');
