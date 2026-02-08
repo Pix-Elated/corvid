@@ -7,7 +7,7 @@ import {
   ButtonStyle,
   Client,
 } from 'discord.js';
-import { setCardMessageId } from '../info-cards';
+import { getCardMessageId, setCardMessageId } from '../info-cards';
 
 interface EmbedPostResult {
   posted: string[];
@@ -17,21 +17,26 @@ interface EmbedPostResult {
 }
 
 /**
- * Delete ALL messages from our bot in a channel
- * This ensures we don't leave duplicate embeds behind
+ * Delete bot messages from a channel, optionally skipping a specific message ID.
+ * Used to clean up duplicates while preserving the tracked embed.
  */
-async function deleteAllBotMessages(channel: TextChannel, client: Client): Promise<number> {
+async function cleanupBotMessages(
+  channel: TextChannel,
+  client: Client,
+  skipMessageId?: string
+): Promise<number> {
   let deleted = 0;
   try {
-    // Fetch last 100 messages (should be more than enough for embed channels)
     const messages = await channel.messages.fetch({ limit: 100 });
-    const botMessages = messages.filter((m) => m.author.id === client.user?.id);
+    const botMessages = messages.filter(
+      (m) => m.author.id === client.user?.id && m.id !== skipMessageId
+    );
 
     for (const [, msg] of botMessages) {
       try {
         await msg.delete();
         deleted++;
-        console.log(`[Embeds] Deleted bot message ${msg.id} from #${channel.name}`);
+        console.log(`[Embeds] Deleted duplicate bot message ${msg.id} from #${channel.name}`);
       } catch (e) {
         console.error(`[Embeds] Failed to delete message ${msg.id}:`, e);
       }
@@ -40,6 +45,61 @@ async function deleteAllBotMessages(channel: TextChannel, client: Client): Promi
     console.error(`[Embeds] Failed to fetch messages from #${channel.name}:`, e);
   }
   return deleted;
+}
+
+/**
+ * Try to edit an existing tracked message, or post a new one if not found.
+ * Also cleans up duplicate bot messages in the channel.
+ */
+async function editOrPost(
+  channel: TextChannel,
+  client: Client,
+  channelName: string,
+  options: {
+    embeds: EmbedBuilder[];
+    components?: ActionRowBuilder<ButtonBuilder>[];
+    pin?: boolean;
+  }
+): Promise<'edited' | 'posted'> {
+  const trackedId = getCardMessageId(channelName);
+  const sendPayload: { embeds: EmbedBuilder[]; components?: ActionRowBuilder<ButtonBuilder>[] } = {
+    embeds: options.embeds,
+  };
+  if (options.components) {
+    sendPayload.components = options.components;
+  }
+
+  // Try to edit the existing tracked message
+  if (trackedId) {
+    try {
+      const existing = await channel.messages.fetch(trackedId);
+      if (existing && existing.author.id === client.user?.id) {
+        await existing.edit(sendPayload);
+        // Clean up any OTHER bot messages (duplicates from previous bugs)
+        await cleanupBotMessages(channel, client, trackedId);
+        console.log(`[Embeds] Edited existing message ${trackedId} in #${channelName}`);
+        return 'edited';
+      }
+    } catch {
+      // Message was deleted or inaccessible — fall through to post new
+      console.log(
+        `[Embeds] Tracked message ${trackedId} not found in #${channelName}, posting new`
+      );
+    }
+  }
+
+  // Clean up any leftover bot messages before posting fresh
+  await cleanupBotMessages(channel, client);
+
+  // Post fresh
+  const message = await channel.send(sendPayload);
+  setCardMessageId(channelName, message.id);
+
+  if (options.pin) {
+    await message.pin().catch((e) => console.error(`[Embeds] Failed to pin #${channelName}:`, e));
+  }
+
+  return 'posted';
 }
 
 /**
@@ -116,31 +176,40 @@ function getRulesEmbed(): EmbedBuilder {
   return new EmbedBuilder()
     .setTitle('📜 Server Rules')
     .setColor(0xe74c3c)
-    .setDescription('Please follow these rules to keep our community safe and welcoming.')
+    .setDescription(
+      'We believe in free and open discussion. Say what you mean.\n' +
+        'These rules exist solely to keep the server functional and legally compliant.'
+    )
     .addFields(
       {
-        name: '1️⃣ Be Respectful',
-        value: 'Treat everyone with respect. No harassment, hate speech, or personal attacks.',
+        name: '1️⃣ No Illegal Content',
+        value:
+          'Nothing that violates U.S. federal law. No CSAM, no credible threats ' +
+          'of violence, no doxxing (posting private info like addresses/SSNs).',
       },
       {
-        name: '2️⃣ No Spam',
-        value: 'No excessive messaging, self-promotion, or advertising without permission.',
+        name: '2️⃣ No Spam or Malicious Links',
+        value:
+          'No excessive flooding, bot spam, scam links, phishing, or malware. ' +
+          'Self-promotion requires permission from staff.',
       },
       {
-        name: '3️⃣ Keep It SFW',
-        value: 'No NSFW content. This is a family-friendly community.',
+        name: '3️⃣ No Cheating or Exploits',
+        value:
+          "Don't share or discuss cheats, hacks, dupes, or exploits for RavenQuest. " +
+          'Report vulnerabilities to staff privately.',
       },
       {
         name: '4️⃣ Stay On Topic',
-        value: 'Use channels for their intended purpose. Off-topic chat goes in #off-topic.',
+        value:
+          'Use channels for their intended purpose. Random chat goes in #off-topic. ' +
+          'Nobody wants to scroll past your food pics in #bug-reports.',
       },
       {
-        name: '5️⃣ No Cheating/Exploits',
-        value: "Don't share or discuss cheats, hacks, or exploits.",
-      },
-      {
-        name: '6️⃣ Listen to Staff',
-        value: 'Follow moderator instructions. If you disagree, discuss it privately.',
+        name: '5️⃣ Listen to Staff',
+        value:
+          'Moderator decisions are final in the moment. If you disagree, ' +
+          'bring it up privately or open a ticket — not in public chat.',
       }
     )
     .setFooter({ text: 'Breaking rules may result in warnings, mutes, or bans.' })
@@ -355,8 +424,9 @@ const EMBED_CONFIGS: EmbedConfig[] = [
 ];
 
 /**
- * Post or update all embeds in their respective channels
- * Tracks message IDs to update existing embeds on subsequent runs
+ * Post or update all embeds in their respective channels.
+ * Tries to edit existing tracked messages first; only posts fresh if the
+ * tracked message is missing. Also cleans up duplicate bot messages.
  */
 export async function postBootstrapEmbeds(guild: Guild, client: Client): Promise<EmbedPostResult> {
   const result: EmbedPostResult = {
@@ -366,152 +436,55 @@ export async function postBootstrapEmbeds(guild: Guild, client: Client): Promise
     errors: [],
   };
 
-  // Post verification panel
-  // ALWAYS delete all existing bot messages first to prevent duplicates
-  try {
-    const verifyChannel = guild.channels.cache.find(
-      (ch) => ch.name === 'verify-here' && ch instanceof TextChannel
-    ) as TextChannel | undefined;
+  // Helper: find a text channel by name
+  const findTextChannel = (name: string): TextChannel | undefined =>
+    guild.channels.cache.find((ch) => ch.name === name && ch instanceof TextChannel) as
+      | TextChannel
+      | undefined;
 
-    if (verifyChannel) {
-      // Delete ALL bot messages in this channel first
-      const deletedCount = await deleteAllBotMessages(verifyChannel, client);
-      if (deletedCount > 0) {
-        console.log(`[Embeds] Cleaned up ${deletedCount} old bot messages from #verify-here`);
-      }
+  // ── Channels with interactive buttons ──
 
-      // Now post fresh embed
-      const { embed, row } = getVerificationEmbed(guild);
-      const message = await verifyChannel.send({ embeds: [embed], components: [row] });
-      setCardMessageId('verify-here', message.id);
-      result.posted.push('verify-here');
+  const panelConfigs: {
+    channelName: string;
+    getContent: () => { embed: EmbedBuilder; row: ActionRowBuilder<ButtonBuilder> };
+    pin?: boolean;
+  }[] = [
+    { channelName: 'verify-here', getContent: () => getVerificationEmbed(guild) },
+    { channelName: 'support-general', getContent: () => getSupportGeneralPanel(), pin: true },
+    { channelName: 'roles', getContent: () => getRolesPanel(guild) },
+    { channelName: 'bug-reports', getContent: () => getBugReportsPanel() },
+    { channelName: 'feature-requests', getContent: () => getFeatureRequestsPanel() },
+  ];
+
+  for (const panel of panelConfigs) {
+    try {
+      const channel = findTextChannel(panel.channelName);
+      if (!channel) continue;
+
+      const { embed, row } = panel.getContent();
+      const action = await editOrPost(channel, client, panel.channelName, {
+        embeds: [embed],
+        components: [row],
+        pin: panel.pin,
+      });
+      (action === 'edited' ? result.updated : result.posted).push(panel.channelName);
+    } catch (error) {
+      result.errors.push(`${panel.channelName}: ${error}`);
     }
-  } catch (error) {
-    result.errors.push(`verify-here: ${error}`);
   }
 
-  // Post support panel with private ticket button to support-general
-  // ALWAYS delete all existing bot messages first to prevent duplicates
-  try {
-    const supportChannel = guild.channels.cache.find(
-      (ch) => ch.name === 'support-general' && ch instanceof TextChannel
-    ) as TextChannel | undefined;
+  // ── Embed-only info cards (no buttons) ──
 
-    if (supportChannel) {
-      // Delete ALL bot messages in this channel first
-      const deletedCount = await deleteAllBotMessages(supportChannel, client);
-      if (deletedCount > 0) {
-        console.log(`[Embeds] Cleaned up ${deletedCount} old bot messages from #support-general`);
-      }
-
-      // Now post fresh embed
-      const { embed, row } = getSupportGeneralPanel();
-      const message = await supportChannel.send({ embeds: [embed], components: [row] });
-      setCardMessageId('support-general', message.id);
-      await message.pin().catch((e) => console.error('[Embeds] Failed to pin support-general:', e));
-      result.posted.push('support-general');
-    }
-  } catch (error) {
-    result.errors.push(`support-general: ${error}`);
-  }
-
-  // Post notification roles panel
-  // ALWAYS delete all existing bot messages first to prevent duplicates
-  try {
-    const rolesChannel = guild.channels.cache.find(
-      (ch) => ch.name === 'roles' && ch instanceof TextChannel
-    ) as TextChannel | undefined;
-
-    if (rolesChannel) {
-      // Delete ALL bot messages in this channel first
-      const deletedCount = await deleteAllBotMessages(rolesChannel, client);
-      if (deletedCount > 0) {
-        console.log(`[Embeds] Cleaned up ${deletedCount} old bot messages from #roles`);
-      }
-
-      // Now post fresh embed
-      const { embed, row } = getRolesPanel(guild);
-      const message = await rolesChannel.send({ embeds: [embed], components: [row] });
-      setCardMessageId('roles', message.id);
-      result.posted.push('roles');
-    }
-  } catch (error) {
-    result.errors.push(`roles: ${error}`);
-  }
-
-  // Post bug reports panel with button
-  // ALWAYS delete all existing bot messages first to prevent duplicates
-  try {
-    const bugChannel = guild.channels.cache.find(
-      (ch) => ch.name === 'bug-reports' && ch instanceof TextChannel
-    ) as TextChannel | undefined;
-
-    if (bugChannel) {
-      // Delete ALL bot messages in this channel first
-      const deletedCount = await deleteAllBotMessages(bugChannel, client);
-      if (deletedCount > 0) {
-        console.log(`[Embeds] Cleaned up ${deletedCount} old bot messages from #bug-reports`);
-      }
-
-      // Now post fresh embed
-      const { embed, row } = getBugReportsPanel();
-      const message = await bugChannel.send({ embeds: [embed], components: [row] });
-      setCardMessageId('bug-reports', message.id);
-      result.posted.push('bug-reports');
-    }
-  } catch (error) {
-    result.errors.push(`bug-reports: ${error}`);
-  }
-
-  // Post feature requests panel with button
-  // ALWAYS delete all existing bot messages first to prevent duplicates
-  try {
-    const featureChannel = guild.channels.cache.find(
-      (ch) => ch.name === 'feature-requests' && ch instanceof TextChannel
-    ) as TextChannel | undefined;
-
-    if (featureChannel) {
-      // Delete ALL bot messages in this channel first
-      const deletedCount = await deleteAllBotMessages(featureChannel, client);
-      if (deletedCount > 0) {
-        console.log(`[Embeds] Cleaned up ${deletedCount} old bot messages from #feature-requests`);
-      }
-
-      // Now post fresh embed
-      const { embed, row } = getFeatureRequestsPanel();
-      const message = await featureChannel.send({ embeds: [embed], components: [row] });
-      setCardMessageId('feature-requests', message.id);
-      result.posted.push('feature-requests');
-    }
-  } catch (error) {
-    result.errors.push(`feature-requests: ${error}`);
-  }
-
-  // Post info cards
-  // ALWAYS delete all existing bot messages first to prevent duplicates
   for (const config of EMBED_CONFIGS) {
     try {
-      const channel = guild.channels.cache.find(
-        (ch) => ch.name === config.channelName && ch instanceof TextChannel
-      ) as TextChannel | undefined;
+      const channel = findTextChannel(config.channelName);
+      if (!channel) continue;
 
-      if (!channel) {
-        continue;
-      }
-
-      // Delete ALL bot messages in this channel first
-      const deletedCount = await deleteAllBotMessages(channel, client);
-      if (deletedCount > 0) {
-        console.log(
-          `[Embeds] Cleaned up ${deletedCount} old bot messages from #${config.channelName}`
-        );
-      }
-
-      // Now post fresh embed
       const embed = config.getEmbed(guild);
-      const message = await channel.send({ embeds: [embed] });
-      setCardMessageId(config.channelName, message.id);
-      result.posted.push(config.channelName);
+      const action = await editOrPost(channel, client, config.channelName, {
+        embeds: [embed],
+      });
+      (action === 'edited' ? result.updated : result.posted).push(config.channelName);
     } catch (error) {
       result.errors.push(`${config.channelName}: ${error}`);
     }
