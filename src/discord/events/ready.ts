@@ -22,7 +22,6 @@ import {
 } from '../commands/moderation';
 import { scanCommand } from '../commands/scan';
 import { postOrUpdateBanList, startBanListRefresh } from '../../hall-of-shame';
-import { loadNsfwModel } from '../../image-scanner';
 
 /**
  * Handle the ready event - bot is connected and ready
@@ -47,10 +46,7 @@ export async function handleReady(client: Client): Promise<void> {
   // Start ticket auto-close checker
   startAutoClose(client);
 
-  // Load NSFW image classification model (runs in background, non-blocking)
-  loadNsfwModel().catch((error) => {
-    console.error('[Ready] Failed to load NSFW model:', error);
-  });
+  // NSFW model loads lazily on first image scan — no startup load needed
 
   // Post/update hall-of-shame ban list card and start daily refresh
   const config = getConfig();
