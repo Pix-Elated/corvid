@@ -1,5 +1,6 @@
 import { Guild, ChannelType } from 'discord.js';
 import { CategoryConfig } from '../types';
+import { getAdoptedChannelIds, pruneDeletedChannels } from '../adopted-channels';
 
 interface CleanupResult {
   channelsDeleted: string[];
@@ -60,6 +61,21 @@ export async function cleanupUnmanagedChannels(
 
   const { categoryNames, categoryChannelMap } = getManagedStructure(categories);
 
+  // Get adopted channel IDs for protection during cleanup
+  const adoptedChannelIds = getAdoptedChannelIds();
+
+  // Prune adopted channels that no longer exist in the guild
+  const allChannelIds = new Set<string>();
+  for (const [id] of guild.channels.cache) {
+    allChannelIds.add(id);
+  }
+  const pruned = pruneDeletedChannels(allChannelIds);
+  if (pruned.length > 0) {
+    console.log(
+      `[Cleanup] Pruned ${pruned.length} adopted channels that no longer exist: ${pruned.join(', ')}`
+    );
+  }
+
   // Get all channels in the guild
   const allChannels = guild.channels.cache;
 
@@ -73,6 +89,11 @@ export async function cleanupUnmanagedChannels(
 
       // Skip ticket channels (dynamically managed)
       if (isTicketChannel(channel.name)) {
+        continue;
+      }
+
+      // Skip adopted channels (manually created, brought under bot management via /scan)
+      if (adoptedChannelIds.has(channel.id)) {
         continue;
       }
 
@@ -134,6 +155,18 @@ export async function cleanupUnmanagedChannels(
 
       // Check if this category is in our managed structure
       if (!categoryNames.has(channel.name.toUpperCase())) {
+        // Check if this category contains any adopted channels before deleting
+        const categoryChildren = refreshedChannels.filter((c) => c.parentId === channel.id);
+        const hasAdoptedChildren = categoryChildren.some((child) =>
+          adoptedChannelIds.has(child.id)
+        );
+        if (hasAdoptedChildren) {
+          console.log(
+            `[Cleanup] Preserving category "${channel.name}" - contains adopted channels`
+          );
+          continue;
+        }
+
         console.log(`[Cleanup] Deleting unmanaged category: ${channel.name}`);
         await channel.delete('Cleanup: Category not in managed server structure');
         result.categoriesDeleted.push(channel.name);

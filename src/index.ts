@@ -7,6 +7,7 @@ import { loadReactionRolesState } from './reaction-roles';
 import { loadInfoCardsState } from './info-cards';
 import { loadServerState } from './server-state';
 import { loadReleaseState } from './releases';
+import { loadAdoptedChannelsState } from './adopted-channels';
 import { createClient } from './discord/client';
 import { handleReady } from './discord/events/ready';
 import { handleMessageCreate } from './discord/events/messageCreate';
@@ -44,6 +45,7 @@ async function main(): Promise<void> {
   loadInfoCardsState();
   loadServerState();
   loadReleaseState();
+  loadAdoptedChannelsState();
 
   // Create Discord client
   client = createClient();
