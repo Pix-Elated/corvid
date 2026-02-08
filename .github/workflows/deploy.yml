@@ -136,16 +136,30 @@ jobs:
         run: |
           # Use the unique tag (version-sha) to force Azure to create a new revision
           IMAGE_TAG="${{ needs.build-and-push.outputs.image_tag }}"
-          echo "Deploying image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${IMAGE_TAG}"
+          FULL_IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${IMAGE_TAG}"
+          echo "Deploying image: ${FULL_IMAGE}"
 
-          # Explicit --container-name works around Azure CLI bug where
-          # `az containerapp update` crashes with "object of type 'NoneType' has no len()"
-          # when the template containers array is null in the API response
-          az containerapp update \
-            --name ${{ env.CONTAINER_APP_NAME }} \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --container-name ${{ env.CONTAINER_APP_NAME }} \
-            --image ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${IMAGE_TAG}
+          # Bypass `az containerapp update` entirely — it crashes with NoneType errors
+          # when the template containers array is null in the API response (Azure CLI bug).
+          # Instead, fetch the current app, patch the image via jq, and PUT via REST API.
+          SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+          APP_ID="/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${{ env.RESOURCE_GROUP }}/providers/Microsoft.App/containerApps/${{ env.CONTAINER_APP_NAME }}"
+          API_VERSION="2024-03-01"
+
+          # Fetch current container app definition
+          CURRENT=$(az rest --method GET --url "https://management.azure.com${APP_ID}?api-version=${API_VERSION}")
+
+          # Update the container image (first container in the template)
+          UPDATED=$(echo "$CURRENT" | jq --arg img "$FULL_IMAGE" '
+            .properties.template.containers[0].image = $img
+          ')
+
+          # PUT the updated definition back
+          echo "$UPDATED" | az rest --method PUT \
+            --url "https://management.azure.com${APP_ID}?api-version=${API_VERSION}" \
+            --body @-
+
+          echo "Deployment submitted successfully"
 
       - name: Verify deployment
         run: |
