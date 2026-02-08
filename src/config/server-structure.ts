@@ -272,6 +272,29 @@ export const defaultServerStructure: ServerStructure = {
           type: ChannelType.GuildText,
           topic: 'Share your screenshots and media.',
         },
+        {
+          name: 'complain',
+          type: ChannelType.GuildText,
+          topic: 'Vent your frustrations here.',
+        },
+        {
+          name: 'hall-of-shame',
+          type: ChannelType.GuildText,
+          topic: 'The worst of the worst.',
+          permissionOverwrites: [
+            {
+              // Verified users can see and read but not post
+              role: 'Verified',
+              allow: ['ViewChannel', 'ReadMessageHistory'],
+              deny: ['SendMessages', 'AddReactions'],
+            },
+            {
+              // Only admins can post
+              role: 'Admin',
+              allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory', 'ManageMessages'],
+            },
+          ],
+        },
       ],
     },
     // 5. SUPPORT - bugs, features, tickets
