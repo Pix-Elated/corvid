@@ -1,6 +1,5 @@
 import fs from 'fs';
 import path from 'path';
-import os from 'os';
 import { Ticket, TicketState, TicketType } from '../types';
 
 // Use DATA_PATH env var for persistent storage, fallback to cwd
@@ -20,8 +19,9 @@ let currentState: TicketState = { ...defaultState };
  */
 function atomicWriteSync(filePath: string, data: string): void {
   const tempFile = path.join(
-    os.tmpdir(),
-    `tickets-${Date.now()}-${Math.random().toString(36)}.tmp`
+    // Same dir as target to avoid EXDEV on mounted volumes
+    path.dirname(filePath),
+    `.tickets-${Date.now()}-${Math.random().toString(36)}.tmp`
   );
   try {
     fs.writeFileSync(tempFile, data, 'utf-8');

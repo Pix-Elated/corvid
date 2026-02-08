@@ -1,6 +1,5 @@
 import fs from 'fs';
 import path from 'path';
-import os from 'os';
 import { StatusState, ServerStatus, MaintenanceInfo } from '../types';
 
 // Use DATA_PATH env var for persistent storage, fallback to cwd
@@ -20,7 +19,11 @@ let currentState: StatusState = { ...defaultState };
  * Atomically write data to a file (write to temp, then rename)
  */
 function atomicWriteSync(filePath: string, data: string): void {
-  const tempFile = path.join(os.tmpdir(), `state-${Date.now()}-${Math.random().toString(36)}.tmp`);
+  const tempFile = path.join(
+    // Same dir as target to avoid EXDEV on mounted volumes
+    path.dirname(filePath),
+    `.state-${Date.now()}-${Math.random().toString(36)}.tmp`
+  );
   try {
     fs.writeFileSync(tempFile, data, 'utf-8');
     fs.renameSync(tempFile, filePath);
