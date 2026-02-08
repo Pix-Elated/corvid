@@ -21,6 +21,8 @@ import {
   clearWarningsCommand,
 } from '../commands/moderation';
 import { scanCommand } from '../commands/scan';
+import { postOrUpdateBanList, startBanListRefresh } from '../../hall-of-shame';
+import { loadNsfwModel } from '../../image-scanner';
 
 /**
  * Handle the ready event - bot is connected and ready
@@ -44,6 +46,23 @@ export async function handleReady(client: Client): Promise<void> {
 
   // Start ticket auto-close checker
   startAutoClose(client);
+
+  // Load NSFW image classification model (runs in background, non-blocking)
+  loadNsfwModel().catch((error) => {
+    console.error('[Ready] Failed to load NSFW model:', error);
+  });
+
+  // Post/update hall-of-shame ban list card and start daily refresh
+  const config = getConfig();
+  try {
+    const guild = client.guilds.cache.get(config.guildId);
+    if (guild) {
+      await postOrUpdateBanList(guild, client);
+      startBanListRefresh(guild, client);
+    }
+  } catch (error) {
+    console.error('[Ready] Failed to set up ban list card:', error);
+  }
 }
 
 /**
