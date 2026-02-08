@@ -1,5 +1,5 @@
 import { Message, EmbedBuilder, TextChannel, ChannelType } from 'discord.js';
-import { classifyImage, isScannerReady } from '../../image-scanner';
+import { classifyImage } from '../../image-scanner';
 
 // ── Illegal content patterns (U.S. federal law) ──
 // CSAM solicitation, credible violence threats, doxxing patterns
@@ -148,7 +148,6 @@ async function logToModChannel(
  */
 async function checkAttachments(message: Message): Promise<boolean> {
   if (message.attachments.size === 0) return false;
-  if (!isScannerReady()) return false;
 
   const imageAttachments = message.attachments.filter((a) => a.contentType?.startsWith('image/'));
   if (imageAttachments.size === 0) return false;
