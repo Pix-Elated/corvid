@@ -48,5 +48,8 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:${PORT:-3000}/health || exit 1
 
+# Give Node.js enough heap for TF.js model loading (default is too low for 1Gi container)
+ENV NODE_OPTIONS="--max-old-space-size=768"
+
 # Start the application
 CMD ["node", "dist/index.js"]

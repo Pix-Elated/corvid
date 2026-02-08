@@ -20,33 +20,29 @@ export interface ScanResult {
 }
 
 /**
- * Load the NSFW classification model. Call once at startup.
- * Uses MobileNetV2 — lighter weight, suitable for server-side classification.
+ * Load the NSFW classification model lazily.
+ * Called automatically on first image scan — not at startup — so the bot is
+ * fully operational before TF.js allocates memory.
  */
-export async function loadNsfwModel(): Promise<void> {
-  if (model || modelLoading) return;
+async function ensureModel(): Promise<boolean> {
+  if (model) return true;
+  if (modelLoading) return false;
   modelLoading = true;
 
   try {
-    // Set TF.js backend to CPU (no GPU in Docker containers)
     await tf.setBackend('cpu');
     await tf.ready();
 
     model = await nsfwjs.load('MobileNetV2');
     console.log('[ImageScanner] NSFW model loaded (MobileNetV2, CPU backend)');
+    return true;
   } catch (error) {
     console.error('[ImageScanner] Failed to load NSFW model:', error);
     model = null;
+    return false;
   } finally {
     modelLoading = false;
   }
-}
-
-/**
- * Check if the scanner is ready.
- */
-export function isScannerReady(): boolean {
-  return model !== null;
 }
 
 /**
@@ -82,13 +78,14 @@ async function imageToTensor(buffer: Buffer): Promise<tf.Tensor3D> {
  * Returns the classification result with recommended action.
  */
 export async function classifyImage(url: string): Promise<ScanResult | null> {
-  if (!model) return null;
+  // Lazy-load model on first call
+  if (!model && !(await ensureModel())) return null;
 
   let tensor: tf.Tensor3D | null = null;
   try {
     const buffer = await fetchImage(url);
     tensor = await imageToTensor(buffer);
-    const predictions = await model.classify(tensor);
+    const predictions = await model!.classify(tensor);
 
     // Find Porn and Hentai probabilities
     const porn = predictions.find((p) => p.className === 'Porn')?.probability ?? 0;
