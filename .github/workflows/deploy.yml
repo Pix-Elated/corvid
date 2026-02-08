@@ -139,25 +139,27 @@ jobs:
           FULL_IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${IMAGE_TAG}"
           echo "Deploying image: ${FULL_IMAGE}"
 
-          # Bypass `az containerapp update` entirely — it crashes with NoneType errors
-          # when the template containers array is null in the API response (Azure CLI bug).
-          # Instead, fetch the current app, patch the image via jq, and PUT via REST API.
+          # Bypass `az containerapp update` — it crashes with NoneType errors when
+          # the template containers array is null (Azure CLI bug).
+          # Use PATCH with only the template so secrets (redacted in GET) aren't touched.
           SUBSCRIPTION_ID=$(az account show --query id -o tsv)
           APP_ID="/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${{ env.RESOURCE_GROUP }}/providers/Microsoft.App/containerApps/${{ env.CONTAINER_APP_NAME }}"
           API_VERSION="2024-03-01"
 
-          # Fetch current container app definition
-          CURRENT=$(az rest --method GET --url "https://management.azure.com${APP_ID}?api-version=${API_VERSION}")
+          # Fetch only the current template (containers, scale, volumes)
+          TEMPLATE=$(az rest --method GET \
+            --url "https://management.azure.com${APP_ID}?api-version=${API_VERSION}" \
+            --query "properties.template")
 
-          # Update the container image (first container in the template)
-          UPDATED=$(echo "$CURRENT" | jq --arg img "$FULL_IMAGE" '
-            .properties.template.containers[0].image = $img
+          # Patch the image in the first container
+          PATCHED_TEMPLATE=$(echo "$TEMPLATE" | jq --arg img "$FULL_IMAGE" '
+            .containers[0].image = $img
           ')
 
-          # PUT the updated definition back
-          echo "$UPDATED" | az rest --method PUT \
+          # PATCH only the template — leaves secrets, ingress, registries untouched
+          az rest --method PATCH \
             --url "https://management.azure.com${APP_ID}?api-version=${API_VERSION}" \
-            --body @-
+            --body "$(jq -n --argjson tmpl "$PATCHED_TEMPLATE" '{"properties":{"template":$tmpl}}')"
 
           echo "Deployment submitted successfully"
 
