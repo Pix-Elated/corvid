@@ -1,6 +1,6 @@
 {
   "name": "corvid",
-  "version": "1.9.0",
+  "version": "1.9.1",
   "description": "Discord bot for server bootstrapping and status monitoring",
   "main": "dist/index.js",
   "scripts": {
