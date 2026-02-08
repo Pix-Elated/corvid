@@ -20,6 +20,7 @@ import {
   warningsCommand,
   clearWarningsCommand,
 } from '../commands/moderation';
+import { scanCommand } from '../commands/scan';
 
 /**
  * Handle the ready event - bot is connected and ready
@@ -66,6 +67,7 @@ async function registerCommands(client: Client): Promise<void> {
     warnCommand.data.toJSON(),
     warningsCommand.data.toJSON(),
     clearWarningsCommand.data.toJSON(),
+    scanCommand.data.toJSON(),
   ];
 
   const rest = new REST({ version: '10' }).setToken(config.discordBotToken);
