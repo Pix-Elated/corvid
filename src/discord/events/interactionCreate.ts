@@ -16,6 +16,7 @@ import {
   warningsCommand,
   clearWarningsCommand,
 } from '../commands/moderation';
+import { scanCommand } from '../commands/scan';
 import {
   handleTicketButton,
   handleTicketModal,
@@ -280,6 +281,9 @@ export async function handleInteractionCreate(interaction: Interaction): Promise
         break;
       case 'clearwarnings':
         await clearWarningsCommand.execute(interaction);
+        break;
+      case 'scan':
+        await scanCommand.execute(interaction);
         break;
       default:
         console.warn(`[InteractionCreate] Unknown command: ${commandName}`);
