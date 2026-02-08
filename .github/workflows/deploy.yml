@@ -138,9 +138,13 @@ jobs:
           IMAGE_TAG="${{ needs.build-and-push.outputs.image_tag }}"
           echo "Deploying image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${IMAGE_TAG}"
 
+          # Explicit --container-name works around Azure CLI bug where
+          # `az containerapp update` crashes with "object of type 'NoneType' has no len()"
+          # when the template containers array is null in the API response
           az containerapp update \
             --name ${{ env.CONTAINER_APP_NAME }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
+            --container-name ${{ env.CONTAINER_APP_NAME }} \
             --image ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${IMAGE_TAG}
 
       - name: Verify deployment
