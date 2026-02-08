@@ -281,12 +281,34 @@ export const defaultServerStructure: ServerStructure = {
           name: 'hall-of-shame',
           type: ChannelType.GuildText,
           topic: 'The worst of the worst.',
+          // Channel-level overwrites REPLACE category overwrites, so we must
+          // re-declare every role from COMMUNITY plus the channel-specific tweaks.
           permissionOverwrites: [
+            {
+              role: '@everyone',
+              deny: ['ViewChannel'],
+            },
+            {
+              role: 'Quarantine',
+              deny: ['ViewChannel'],
+            },
+            {
+              role: 'Muted',
+              deny: ['SendMessages', 'AddReactions'],
+            },
             {
               // Verified users can see and read but not post
               role: 'Verified',
               allow: ['ViewChannel', 'ReadMessageHistory'],
               deny: ['SendMessages', 'AddReactions'],
+            },
+            {
+              role: 'Support Team',
+              allow: ['ViewChannel', 'ReadMessageHistory'],
+            },
+            {
+              role: 'Moderator',
+              allow: ['ViewChannel', 'ReadMessageHistory', 'ManageMessages'],
             },
             {
               // Only admins can post
