@@ -1,6 +1,5 @@
 import fs from 'fs';
 import path from 'path';
-import os from 'os';
 
 // Use DATA_PATH env var for persistent storage, fallback to cwd
 const DATA_DIR = process.env.DATA_PATH || process.cwd();
@@ -21,9 +20,11 @@ let currentState: InfoCardState = { ...defaultState };
  * Atomically write data to a file
  */
 function atomicWriteSync(filePath: string, data: string): void {
+  // Write temp file in the SAME directory as the target to avoid EXDEV errors
+  // when /tmp and DATA_PATH are on different filesystems (e.g. Azure File mount)
   const tempFile = path.join(
-    os.tmpdir(),
-    `info-cards-${Date.now()}-${Math.random().toString(36)}.tmp`
+    path.dirname(filePath),
+    `.info-cards-${Date.now()}-${Math.random().toString(36)}.tmp`
   );
   try {
     fs.writeFileSync(tempFile, data, 'utf-8');
