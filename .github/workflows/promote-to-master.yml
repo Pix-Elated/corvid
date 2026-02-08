@@ -116,8 +116,7 @@ jobs:
           # This ensures the release branch is ahead of master, not diverged
           git rebase origin/master
 
-          # After rebase, sync package.json from master and bump version
-          git checkout origin/master -- package.json package-lock.json
+          # Bump version in the rebased package.json (keeps staging deps intact)
           npm version $NEW --no-git-tag-version
           git add package.json package-lock.json
           git commit -m "chore: bump version to $NEW"
