@@ -3,6 +3,7 @@ name: Promote to Master
 on:
   push:
     branches: [staging]
+  workflow_dispatch:
 
 jobs:
   promote:
@@ -26,13 +27,15 @@ jobs:
         id: check
         run: |
           git fetch origin master
-          AHEAD=$(git rev-list --count origin/master..staging)
-          if [ "$AHEAD" -eq 0 ]; then
+          # Compare tree states directly — if the file trees are identical
+          # (ignoring package.json version), there's nothing to promote
+          DIFF_COUNT=$(git diff origin/master origin/staging -- . ':!package.json' ':!package-lock.json' | wc -l)
+          if [ "$DIFF_COUNT" -eq 0 ]; then
             echo "skip=true" >> $GITHUB_OUTPUT
-            echo "Staging has no new commits ahead of master, skipping"
+            echo "No file differences between staging and master (ignoring version), skipping"
           else
             echo "skip=false" >> $GITHUB_OUTPUT
-            echo "Staging is $AHEAD commits ahead of master"
+            echo "Staging has differences to promote ($DIFF_COUNT diff lines)"
           fi
 
       - name: Determine bump type from merged PR labels
@@ -110,13 +113,32 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git checkout -b "$BRANCH"
+          # Create release branch from master (clean base for PR)
+          git checkout -b "$BRANCH" origin/master
 
-          # Rebase onto master to include all merge commits
-          # This ensures the release branch is ahead of master, not diverged
-          git rebase origin/master
+          # Squash-merge staging: compares final tree states, not individual commits.
+          # This handles diverged histories (cherry-picks, manual merges) cleanly.
+          # -X theirs resolves any conflicts by taking staging's version (latest code).
+          git merge --squash -X theirs staging
 
-          # Bump version in the rebased package.json (keeps staging deps intact)
+          # Reset version files to master's version (we bump separately below)
+          git checkout origin/master -- package.json package-lock.json
+
+          # Check if there are any real changes after excluding version files
+          if git diff --cached --quiet; then
+            echo "No new changes to promote (staging matches master)"
+            echo "skip=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # Commit the squashed changes with a summary of what's included
+          CHANGE_SUMMARY=$(git log origin/master..staging --pretty=format:'- %s' --no-merges | head -20)
+          git commit -m "Release v${NEW}
+
+          Changes from staging:
+          ${CHANGE_SUMMARY}"
+
+          # Bump version in package.json
           npm version $NEW --no-git-tag-version
           git add package.json package-lock.json
           git commit -m "chore: bump version to $NEW"
@@ -127,7 +149,7 @@ jobs:
           echo "branch=$BRANCH" >> $GITHUB_OUTPUT
 
       - name: Create PR to master with auto-merge
-        if: steps.check.outputs.skip != 'true'
+        if: steps.check.outputs.skip != 'true' && steps.version.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |

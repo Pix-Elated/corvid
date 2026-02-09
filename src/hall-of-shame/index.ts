@@ -9,6 +9,7 @@ const BAN_LIST_URL =
 interface BanEntry {
   type: string;
   name: string;
+  discordId?: string;
   reason: string;
   added: string;
 }
@@ -52,7 +53,8 @@ async function buildBanListEmbed(): Promise<EmbedBuilder> {
   // Show all entries (Discord embed description limit is 4096 chars)
   const lines = entries.map((entry) => {
     const reason = entry.reason.length > 80 ? entry.reason.slice(0, 77) + '...' : entry.reason;
-    return `**${entry.name}** — ${reason}`;
+    const id = entry.discordId ? ` (${entry.discordId})` : '';
+    return `**${entry.name}**${id} — ${reason}`;
   });
 
   // Truncate if description would exceed Discord's 4096 char limit
