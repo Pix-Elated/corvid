@@ -3,6 +3,7 @@ name: Promote to Master
 on:
   push:
     branches: [staging]
+  workflow_dispatch:
 
 jobs:
   promote:
