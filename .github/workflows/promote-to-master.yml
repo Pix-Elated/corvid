@@ -27,15 +27,15 @@ jobs:
         id: check
         run: |
           git fetch origin master
-          # Use git cherry to count genuinely new commits (by content, not SHA)
-          # This correctly handles diverged histories from manual cherry-picks
-          NEW_COUNT=$(git cherry origin/master staging | grep -c '^+' || true)
-          if [ "$NEW_COUNT" -eq 0 ]; then
+          # Compare tree states directly — if the file trees are identical
+          # (ignoring package.json version), there's nothing to promote
+          DIFF_COUNT=$(git diff origin/master origin/staging -- . ':!package.json' ':!package-lock.json' | wc -l)
+          if [ "$DIFF_COUNT" -eq 0 ]; then
             echo "skip=true" >> $GITHUB_OUTPUT
-            echo "No new commits on staging (all changes already in master), skipping"
+            echo "No file differences between staging and master (ignoring version), skipping"
           else
             echo "skip=false" >> $GITHUB_OUTPUT
-            echo "Staging has $NEW_COUNT new commits to promote"
+            echo "Staging has differences to promote ($DIFF_COUNT diff lines)"
           fi
 
       - name: Determine bump type from merged PR labels
@@ -113,26 +113,30 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Create release branch FROM master (clean base, no divergence)
+          # Create release branch from master (clean base for PR)
           git checkout -b "$BRANCH" origin/master
 
-          # Cherry-pick only commits that are genuinely new on staging
-          # (git cherry compares by patch-id / content, not SHA, so commits
-          # already on master via manual cherry-picks are automatically skipped)
-          NEW_COMMITS=$(git cherry origin/master staging | grep '^+' | awk '{print $2}')
+          # Squash-merge staging: compares final tree states, not individual commits.
+          # This handles diverged histories (cherry-picks, manual merges) cleanly.
+          # -X theirs resolves any conflicts by taking staging's version (latest code).
+          git merge --squash -X theirs staging
 
-          if [ -z "$NEW_COMMITS" ]; then
-            echo "No new commits to promote (all staging commits already in master)"
+          # Reset version files to master's version (we bump separately below)
+          git checkout origin/master -- package.json package-lock.json
+
+          # Check if there are any real changes after excluding version files
+          if git diff --cached --quiet; then
+            echo "No new changes to promote (staging matches master)"
             echo "skip=true" >> $GITHUB_OUTPUT
             exit 0
           fi
 
-          echo "Cherry-picking new commits:"
-          echo "$NEW_COMMITS"
+          # Commit the squashed changes with a summary of what's included
+          CHANGE_SUMMARY=$(git log origin/master..staging --pretty=format:'- %s' --no-merges | head -20)
+          git commit -m "Release v${NEW}
 
-          for COMMIT in $NEW_COMMITS; do
-            git cherry-pick "$COMMIT"
-          done
+          Changes from staging:
+          ${CHANGE_SUMMARY}"
 
           # Bump version in package.json
           npm version $NEW --no-git-tag-version
