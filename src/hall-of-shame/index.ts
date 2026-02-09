@@ -34,19 +34,7 @@ async function fetchBanList(): Promise<BanEntry[]> {
 }
 
 /**
- * Format a single ban entry line for the embed.
- * Uses Discord mention syntax <@id> so IDs render as clickable user tags.
- */
-function formatEntry(entry: BanEntry): string {
-  if (entry.discordId) {
-    return `\u25B8 **${entry.name}** \u2014 <@${entry.discordId}>`;
-  }
-  return `\u25B8 **${entry.name}**`;
-}
-
-/**
  * Build an embed showing the public ban list from RavenHud.
- * Groups entries by reason category for cleaner presentation.
  */
 async function buildBanListEmbed(): Promise<EmbedBuilder> {
   const entries = await fetchBanList();
@@ -54,8 +42,7 @@ async function buildBanListEmbed(): Promise<EmbedBuilder> {
   const embed = new EmbedBuilder()
     .setTitle('\uD83D\uDD28 Hall of Shame')
     .setColor(0xef4444)
-    .setDescription('Players who have earned their place on the wall. Actions have consequences.')
-    .setFooter({ text: `Refreshed daily \u2022 ${entries.length} total entries` })
+    .setFooter({ text: `${entries.length} entries \u2022 Refreshed daily` })
     .setTimestamp();
 
   if (entries.length === 0) {
@@ -63,32 +50,23 @@ async function buildBanListEmbed(): Promise<EmbedBuilder> {
     return embed;
   }
 
-  // Group entries by reason for a cleaner layout
-  const groups = new Map<string, BanEntry[]>();
-  for (const entry of entries) {
-    const existing = groups.get(entry.reason) ?? [];
-    existing.push(entry);
-    groups.set(entry.reason, existing);
+  // Simple list: Name — Reason
+  const lines = entries.map((e) => `**${e.name}** \u2014 ${e.reason}`);
+
+  // Truncate if description would exceed Discord's 4096 char limit
+  let description = '';
+  let shown = 0;
+  for (const line of lines) {
+    if (description.length + line.length + 1 > 3900) break;
+    description += (shown > 0 ? '\n' : '') + line;
+    shown++;
   }
 
-  // Add each reason group as a separate embed field
-  for (const [reason, groupEntries] of groups) {
-    const lines = groupEntries.map(formatEntry);
-    // Discord field value limit is 1024 chars — truncate if needed
-    let value = '';
-    let shown = 0;
-    for (const line of lines) {
-      if (value.length + line.length + 1 > 950) {
-        value += `\n*...and ${groupEntries.length - shown} more*`;
-        break;
-      }
-      value += (shown > 0 ? '\n' : '') + line;
-      shown++;
-    }
-
-    embed.addFields({ name: reason, value });
+  if (shown < entries.length) {
+    description += `\n\n*...and ${entries.length - shown} more.*`;
   }
 
+  embed.setDescription(description);
   return embed;
 }
 
