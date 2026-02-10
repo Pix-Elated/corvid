@@ -37,6 +37,15 @@ function cleanChangelog(changelog: string): string {
   // Remove the main header "## RavenHUD vX.X.X"
   cleaned = cleaned.replace(/^##\s+RavenHUD\s+v[\d.]+\s*\n*/im, '');
 
+  // Remove "What's Changed" heading in all formats — GitHub generates ## heading in description,
+  // and extractReleaseInfo() converts field names to **bold** when concatenating fields
+  cleaned = cleaned.replace(/^##\s+What's Changed\s*\n*/gim, '');
+  cleaned = cleaned.replace(/^\*\*What's Changed\*\*\s*\n*/gim, '');
+
+  // Remove other GitHub auto-generated sections
+  cleaned = cleaned.replace(/^\*\*New Contributors\*\*\s*\n*/gim, '');
+  cleaned = cleaned.replace(/^\*\*Full Changelog\*\*:.*$/gim, '');
+
   // Remove entire sections we don't want
   cleaned = cleaned.replace(/###\s*Security Verification[\s\S]*?(?=###|$)/gi, '');
   cleaned = cleaned.replace(/###\s*How to Verify[\s\S]*?(?=###|$)/gi, '');
