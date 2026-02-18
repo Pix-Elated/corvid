@@ -37,8 +37,8 @@ function cleanChangelog(changelog: string): string {
   // Remove the main header "## RavenHUD vX.X.X"
   cleaned = cleaned.replace(/^##\s+RavenHUD\s+v[\d.]+\s*\n*/im, '');
 
-  // Remove "## What's Changed" heading (GitHub auto-generates it, but the embed field already provides this label)
-  cleaned = cleaned.replace(/^##\s+What's Changed\s*\n*/im, '');
+  // Remove "What's Changed" heading at any depth (## or ###) — the embed field name already provides this label
+  cleaned = cleaned.replace(/^#{2,}\s+What's Changed\s*\n*/gim, '');
 
   // Remove entire sections we don't want
   cleaned = cleaned.replace(/###\s*Security Verification[\s\S]*?(?=###|$)/gi, '');
