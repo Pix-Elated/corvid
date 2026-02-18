@@ -17,7 +17,7 @@ jobs:
 
     steps:
       - name: Checkout staging
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: staging
           fetch-depth: 0
@@ -76,7 +76,7 @@ jobs:
 
       - name: Setup Node.js
         if: steps.check.outputs.skip != 'true'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '20'
 
