@@ -37,8 +37,11 @@ function cleanChangelog(changelog: string): string {
   // Remove the main header "## RavenHUD vX.X.X"
   cleaned = cleaned.replace(/^##\s+RavenHUD\s+v[\d.]+\s*\n*/im, '');
 
-  // Remove "What's Changed" heading at any depth (## or ###) — the embed field name already provides this label
+  // Remove "What's Changed" in all formats — markdown headings (## / ###),
+  // bold (**What's Changed**) from extractReleaseInfo() field concatenation,
+  // and any other variations. The embed field name already provides this label.
   cleaned = cleaned.replace(/^#{2,}\s+What's Changed\s*\n*/gim, '');
+  cleaned = cleaned.replace(/^\*\*What's Changed\*\*\s*\n*/gim, '');
 
   // Remove entire sections we don't want
   cleaned = cleaned.replace(/###\s*Security Verification[\s\S]*?(?=###|$)/gi, '');
@@ -353,7 +356,7 @@ export async function handlePublishModal(interaction: ModalSubmitInteraction): P
 
   if (changelog) {
     embed.addFields({
-      name: "What's Changed",
+      name: 'Changelog',
       value: changelog,
     });
   }
