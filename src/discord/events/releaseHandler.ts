@@ -40,6 +40,9 @@ function cleanChangelog(changelog: string): string {
   // Remove "## What's Changed" heading (GitHub auto-generates it, but the embed field already provides this label)
   cleaned = cleaned.replace(/^##\s+What's Changed\s*\n*/im, '');
 
+  // Also remove bold variant (extractReleaseInfo wraps field names in **bold**)
+  cleaned = cleaned.replace(/^\*\*What's Changed\*\*\s*\n*/im, '');
+
   // Remove entire sections we don't want
   cleaned = cleaned.replace(/###\s*Security Verification[\s\S]*?(?=###|$)/gi, '');
   cleaned = cleaned.replace(/###\s*How to Verify[\s\S]*?(?=###|$)/gi, '');
@@ -220,7 +223,7 @@ async function notifyStaffChannel(client: Client, release: PendingRelease): Prom
         'then it will be posted to #announcements.'
     )
     .addFields({
-      name: 'Changelog',
+      name: "What's Changed",
       value: changelog || 'No changelog provided',
     })
     .setColor(0x2ecc71)
@@ -347,21 +350,16 @@ export async function handlePublishModal(interaction: ModalSubmitInteraction): P
   // Build the announcement embed
   const embed = new EmbedBuilder()
     .setTitle(`📢 Release ${release.version}`)
+    .setURL(release.releaseUrl)
     .setDescription(customMessage)
     .setColor(0x5865f2) // Discord blurple
+    .setFooter({ text: 'RavenHUD' })
     .setTimestamp();
 
   if (changelog) {
     embed.addFields({
       name: 'Changelog',
       value: changelog,
-    });
-  }
-
-  if (release.releaseUrl) {
-    embed.addFields({
-      name: 'Links',
-      value: `[View Full Release](${release.releaseUrl})`,
     });
   }
 
