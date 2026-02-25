@@ -10,5 +10,8 @@ scripts/hooks/
 status.json
 package-lock.json
 
+# Environment files
+.env*
+
 # Docker
 Dockerfile

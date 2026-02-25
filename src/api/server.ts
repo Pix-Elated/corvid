@@ -3,6 +3,7 @@ import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import { statusRouter } from './routes/status';
 import { healthRouter } from './routes/health';
+import { markersRouter } from './routes/markers';
 
 // Allowed origins for CORS
 const ALLOWED_ORIGINS = [
@@ -41,7 +42,7 @@ export function createApiServer(): Application {
           callback(new Error('Not allowed by CORS'));
         }
       },
-      methods: ['GET'],
+      methods: ['GET', 'POST'],
       credentials: false,
     })
   );
@@ -49,11 +50,12 @@ export function createApiServer(): Application {
   // Apply rate limiting
   app.use(limiter);
 
-  // Parse JSON bodies
-  app.use(express.json());
+  // Parse JSON bodies (2MB limit for screenshot payloads)
+  app.use(express.json({ limit: '2mb' }));
 
   // Mount routes
   app.use('/api', statusRouter);
+  app.use('/api', markersRouter);
   app.use('/', healthRouter);
 
   // 404 handler
