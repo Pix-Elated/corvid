@@ -36,12 +36,15 @@ if [ -n "$STAGED_TS_FILES" ]; then
     echo "TypeScript type check passed."
 fi
 
-# 3. Prettier format check on staged files
-echo "Checking code formatting with Prettier..."
-npx prettier --check $STAGED_FILES 2>/dev/null || {
-    echo "Prettier check failed. Run 'npm run format' to fix formatting."
-    exit 1
-}
+# 3. Prettier format check on staged files (skip files Prettier can't parse)
+PRETTIER_FILES=$(echo "$STAGED_FILES" | grep -E '\.(ts|tsx|js|jsx|json|css|scss|md|yml|yaml|html)$' || true)
+if [ -n "$PRETTIER_FILES" ]; then
+    echo "Checking code formatting with Prettier..."
+    npx prettier --check $PRETTIER_FILES || {
+        echo "Prettier check failed. Run 'npm run format' to fix formatting."
+        exit 1
+    }
+fi
 echo "Prettier check passed."
 
 echo "All pre-commit checks passed!"
