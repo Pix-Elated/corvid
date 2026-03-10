@@ -1,4 +1,14 @@
-import { Interaction, ButtonInteraction, GuildMember, EmbedBuilder } from 'discord.js';
+import {
+  Interaction,
+  ButtonInteraction,
+  GuildMember,
+  EmbedBuilder,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+  ActionRowBuilder,
+  ModalSubmitInteraction,
+} from 'discord.js';
 import { setupCommand } from '../commands/setup';
 import { verifyCommand } from '../commands/verify';
 import { populateCommand } from '../commands/populate';
@@ -84,23 +94,36 @@ async function handleToggleUpdatesRole(interaction: ButtonInteraction): Promise<
   }
 }
 
+function generateCaptcha(): { question: string; answer: number } {
+  const ops = ['+', '-', '*'] as const;
+  const op = ops[Math.floor(Math.random() * ops.length)];
+  let a: number, b: number, answer: number;
+  if (op === '+') {
+    a = Math.floor(Math.random() * 20) + 1;
+    b = Math.floor(Math.random() * 20) + 1;
+    answer = a + b;
+  } else if (op === '-') {
+    a = Math.floor(Math.random() * 20) + 10;
+    b = Math.floor(Math.random() * 9) + 1;
+    answer = a - b;
+  } else {
+    a = Math.floor(Math.random() * 8) + 2;
+    b = Math.floor(Math.random() * 8) + 2;
+    answer = a * b;
+  }
+  return { question: `What is ${a} ${op} ${b}?`, answer };
+}
+
 /**
- * Handle button interactions for verification
- * Note: We use @everyone permission restrictions so new members can only see #verify-here
- * This button just adds the Verified role to grant access to other channels
+ * Handle the initial verify button click — shows a math captcha modal
  */
 async function handleVerifyButton(interaction: ButtonInteraction): Promise<void> {
   if (!interaction.guild || !interaction.member) {
-    await interaction.reply({
-      content: 'This can only be used in a server.',
-      ephemeral: true,
-    });
+    await interaction.reply({ content: 'This can only be used in a server.', ephemeral: true });
     return;
   }
 
   const member = interaction.member as GuildMember;
-
-  // Check if already verified
   const verifiedRole = interaction.guild.roles.cache.find(
     (r) => r.name.toLowerCase() === VERIFIED_ROLE_NAME.toLowerCase()
   );
@@ -115,16 +138,69 @@ async function handleVerifyButton(interaction: ButtonInteraction): Promise<void>
   }
 
   if (member.roles.cache.has(verifiedRole.id)) {
+    await interaction.reply({ content: 'You are already verified!', ephemeral: true });
+    return;
+  }
+
+  const { question, answer } = generateCaptcha();
+
+  const modal = new ModalBuilder()
+    .setCustomId(`verify_captcha_${answer}`)
+    .setTitle('Human Verification');
+
+  const input = new TextInputBuilder()
+    .setCustomId('captcha_answer')
+    .setLabel(question)
+    .setStyle(TextInputStyle.Short)
+    .setPlaceholder('Type your answer here')
+    .setRequired(true)
+    .setMaxLength(6);
+
+  modal.addComponents(new ActionRowBuilder<TextInputBuilder>().addComponents(input));
+  await interaction.showModal(modal);
+}
+
+/**
+ * Handle captcha modal submission — verify the answer and grant the Verified role
+ */
+async function handleVerifyCaptchaModal(interaction: ModalSubmitInteraction): Promise<void> {
+  if (!interaction.guild || !interaction.member) {
+    await interaction.reply({ content: 'This can only be used in a server.', ephemeral: true });
+    return;
+  }
+
+  const member = interaction.member as GuildMember;
+  const expectedAnswer = parseInt(interaction.customId.split('_')[2], 10);
+  const userInput = parseInt(interaction.fields.getTextInputValue('captcha_answer').trim(), 10);
+
+  if (isNaN(userInput) || userInput !== expectedAnswer) {
     await interaction.reply({
-      content: 'You are already verified!',
+      content: '❌ Incorrect answer. Click **Verify** again to get a new challenge.',
       ephemeral: true,
     });
     return;
   }
 
+  const verifiedRole = interaction.guild.roles.cache.find(
+    (r) => r.name.toLowerCase() === VERIFIED_ROLE_NAME.toLowerCase()
+  );
+
+  if (!verifiedRole) {
+    await interaction.reply({
+      content: 'Verification role not found. Please contact an administrator.',
+      ephemeral: true,
+    });
+    console.error('[Verify] Verified role not found in guild');
+    return;
+  }
+
+  if (member.roles.cache.has(verifiedRole.id)) {
+    await interaction.reply({ content: 'You are already verified!', ephemeral: true });
+    return;
+  }
+
   try {
-    // Add Verified role - this grants access to other channels
-    await member.roles.add(verifiedRole, 'User verified via button');
+    await member.roles.add(verifiedRole, 'User passed captcha verification');
 
     const successEmbed = new EmbedBuilder()
       .setTitle('✅ Verification Complete')
@@ -133,17 +209,13 @@ async function handleVerifyButton(interaction: ButtonInteraction): Promise<void>
           'You now have access to the server channels.\n' +
           'Make sure to check out the rules and announcements!'
       )
-      .setColor(0x2ecc71) // Green
+      .setColor(0x2ecc71)
       .setTimestamp();
 
-    await interaction.reply({
-      embeds: [successEmbed],
-      ephemeral: true,
-    });
-
-    console.log(`[Verify] User ${member.user.tag} verified successfully`);
+    await interaction.reply({ embeds: [successEmbed], ephemeral: true });
+    console.log(`[Verify] User ${member.user.tag} passed captcha and was verified`);
   } catch (error) {
-    console.error('[Verify] Error verifying user:', error);
+    console.error('[Verify] Error granting Verified role:', error);
     await interaction.reply({
       content: 'Failed to verify. Please contact an administrator.',
       ephemeral: true,
@@ -228,6 +300,10 @@ export async function handleInteractionCreate(interaction: Interaction): Promise
     }
     if (interaction.customId === 'release_modal') {
       await handlePublishModal(interaction);
+      return;
+    }
+    if (interaction.customId.startsWith('verify_captcha_')) {
+      await handleVerifyCaptchaModal(interaction);
       return;
     }
     return;
