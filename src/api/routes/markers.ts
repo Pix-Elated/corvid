@@ -1,7 +1,12 @@
 import { Router, Request, Response } from 'express';
 import { createHash } from 'node:crypto';
 import rateLimit from 'express-rate-limit';
-import type { MarkerPayload, MarkerSubmitRequest, MarkerSubmitResponse } from './markers.types';
+import type {
+  MarkerPayload,
+  MarkerSubmitRequest,
+  MarkerSubmitResponse,
+  ScreenshotSubmitRequest,
+} from './markers.types';
 
 const GITHUB_API = 'https://api.github.com';
 const PUBLIC_REPO = 'Pix-Elated/ravenhud';
@@ -199,3 +204,119 @@ markersRouter.post('/markers/submit', submitLimiter, async (req: Request, res: R
       .json({ success: false, error: 'Internal server error' } satisfies MarkerSubmitResponse);
   }
 });
+
+/**
+ * POST /api/markers/submit-screenshot
+ * Submit a screenshot for an existing base marker (no new marker created).
+ * Creates a GitHub issue that the ingestion workflow will use to backfill the screenshot.
+ */
+markersRouter.post(
+  '/markers/submit-screenshot',
+  submitLimiter,
+  async (req: Request, res: Response) => {
+    const githubPat = process.env.GITHUB_PAT;
+    if (!githubPat) {
+      console.error('[Markers] GITHUB_PAT not configured');
+      res
+        .status(503)
+        .json({ success: false, error: 'Service not configured' } satisfies MarkerSubmitResponse);
+      return;
+    }
+
+    const body = req.body as ScreenshotSubmitRequest;
+
+    if (!body.markerId || !body.screenshot || !body.markerName || !body.category || !body.floor) {
+      res.status(400).json({
+        success: false,
+        error: 'markerId, markerName, category, floor, and screenshot are required',
+      } satisfies MarkerSubmitResponse);
+      return;
+    }
+
+    if (body.screenshot.length > MAX_SCREENSHOT_BYTES) {
+      res.status(400).json({
+        success: false,
+        error: 'Screenshot too large (max ~1MB)',
+      } satisfies MarkerSubmitResponse);
+      return;
+    }
+
+    // Build an issue that looks like a normal marker submission so the ingestion
+    // workflow can process it with its existing backfill logic.
+    const json = JSON.stringify(
+      [
+        {
+          id: body.markerId,
+          category: body.category,
+          name: body.markerName,
+          x: body.x,
+          y: body.y,
+          floor: body.floor,
+          authorName: body.authorName || undefined,
+        },
+      ],
+      null,
+      2
+    );
+
+    const screenshotComment = `\n<!-- RHUD_SCREENSHOT:${body.screenshot} -->\n`;
+    const contributor = body.authorName || 'Anonymous';
+
+    const issueBody = [
+      '## Screenshot for Existing Marker\n',
+      `**Marker**: ${body.markerName}`,
+      `**ID**: \`${body.markerId}\``,
+      `**Location**: ${body.x}, ${body.y} (${body.floor})`,
+      `**Contributor**: ${contributor}\n`,
+      screenshotComment,
+      '<details><summary>Raw JSON (for automated import)</summary>\n',
+      '```json',
+      json,
+      '```',
+      '</details>',
+    ].join('\n');
+
+    try {
+      const ghRes = await fetch(`${GITHUB_API}/repos/${PUBLIC_REPO}/issues`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${githubPat}`,
+          Accept: 'application/vnd.github+json',
+          'Content-Type': 'application/json',
+          'X-GitHub-Api-Version': '2022-11-28',
+        },
+        body: JSON.stringify({
+          title: `Screenshot: ${body.markerName}`,
+          body: issueBody,
+          labels: ['map-markers', 'screenshot-only'],
+        }),
+      });
+
+      if (!ghRes.ok) {
+        const errData = (await ghRes.json()) as Record<string, unknown>;
+        console.error('[Markers] GitHub API error:', ghRes.status, errData.message);
+        res.status(502).json({
+          success: false,
+          error: 'Failed to create issue on GitHub',
+        } satisfies MarkerSubmitResponse);
+        return;
+      }
+
+      const issue = (await ghRes.json()) as Record<string, unknown>;
+      console.log(
+        `[Markers] Created screenshot issue #${issue.number} for marker ${body.markerId}`
+      );
+
+      res.status(201).json({
+        success: true,
+        issueUrl: issue.html_url as string,
+        issueNumber: issue.number as number,
+      } satisfies MarkerSubmitResponse);
+    } catch (err) {
+      console.error('[Markers] Failed to submit screenshot:', err);
+      res
+        .status(500)
+        .json({ success: false, error: 'Internal server error' } satisfies MarkerSubmitResponse);
+    }
+  }
+);
