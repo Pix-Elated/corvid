@@ -23,3 +23,15 @@ export interface MarkerSubmitResponse {
   issueNumber?: number;
   error?: string;
 }
+
+export interface ScreenshotSubmitRequest {
+  markerId: string;
+  markerName: string;
+  category: string;
+  x: number;
+  y: number;
+  floor: string;
+  screenshot: string; // base64 webp
+  authorName?: string;
+  authorDiscordId?: string;
+}
