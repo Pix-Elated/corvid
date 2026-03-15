@@ -48,8 +48,9 @@ function validateMarker(m: unknown, index: number): string | null {
   return null;
 }
 
-/** Generate a deterministic marker ID from its properties. */
+/** Generate a deterministic marker ID from its properties, or preserve client-provided ID. */
 function generateMarkerId(m: MarkerPayload): string {
+  if (m.id) return m.id;
   const fingerprint = `${m.category}_${m.floor}_${m.x}_${m.y}`;
   return `c_${createHash('sha256').update(fingerprint).digest('hex').slice(0, 8)}`;
 }
@@ -71,6 +72,7 @@ function buildIssueBody(
   const json = JSON.stringify(
     markers.map((m) => ({
       id: generateMarkerId(m),
+      ...(m.correction ? { correction: true } : {}),
       category: m.category,
       name: m.name,
       x: m.x,
@@ -156,12 +158,15 @@ markersRouter.post('/markers/submit', submitLimiter, async (req: Request, res: R
   }
 
   // Build issue
+  const hasCorrections = body.markers.some((m) => m.correction);
   const title =
     body.markers.length === 1
-      ? `Map Marker: ${body.markers[0].name}`
+      ? `Map Marker${hasCorrections ? ' Correction' : ''}: ${body.markers[0].name}`
       : `Map Markers: ${body.markers.length} contributions`;
 
   const issueBody = buildIssueBody(body.markers, body.screenshot, body.authorName);
+  const labels = ['map-markers'];
+  if (hasCorrections) labels.push('correction');
 
   try {
     const ghRes = await fetch(`${GITHUB_API}/repos/${PUBLIC_REPO}/issues`, {
@@ -175,7 +180,7 @@ markersRouter.post('/markers/submit', submitLimiter, async (req: Request, res: R
       body: JSON.stringify({
         title,
         body: issueBody,
-        labels: ['map-markers'],
+        labels,
       }),
     });
 
