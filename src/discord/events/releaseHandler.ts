@@ -45,12 +45,6 @@ function cleanChangelog(changelog: string): string {
   cleaned = cleaned.replace(/^#{1,3}\s+What[''\u2019]s Changed\s*\n*/gim, '');
   cleaned = cleaned.replace(/^\*{1,2}What[''\u2019]s Changed\*{1,2}\s*\n*/gim, '');
 
-  // Remove "## What's Changed" heading (GitHub auto-generates it, but the embed field already provides this label)
-  cleaned = cleaned.replace(/^##\s+What's Changed\s*\n*/im, '');
-
-  // Also remove bold variant (extractReleaseInfo wraps field names in **bold**)
-  cleaned = cleaned.replace(/^\*\*What's Changed\*\*\s*\n*/im, '');
-
   // Remove entire sections we don't want
   cleaned = cleaned.replace(/###\s*Security Verification[\s\S]*?(?=###|$)/gi, '');
   cleaned = cleaned.replace(/###\s*How to Verify[\s\S]*?(?=###|$)/gi, '');
