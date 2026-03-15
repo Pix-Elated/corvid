@@ -1,6 +1,10 @@
 /** Types for the community marker submission API */
 
 export interface MarkerPayload {
+  /** Client-provided ID — preserved for base marker corrections, generated otherwise */
+  id?: string;
+  /** When true, this is a correction to an existing base marker (not a new marker) */
+  correction?: boolean;
   category: string;
   name: string;
   x: number;
