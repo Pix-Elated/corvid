@@ -35,7 +35,15 @@ function cleanChangelog(changelog: string): string {
   let cleaned = changelog;
 
   // Remove the main header "## RavenHUD vX.X.X"
-  cleaned = cleaned.replace(/^##\s+RavenHUD\s+v[\d.]+\s*\n*/im, '');
+  cleaned = cleaned.replace(/^#{1,3}\s+RavenHUD\s+v[\d.]+\s*\n*/gim, '');
+
+  // Remove "Changelog" headings (webhook field name wrapping, GitHub boilerplate)
+  cleaned = cleaned.replace(/^#{1,3}\s+Changelog\s*\n*/gim, '');
+  cleaned = cleaned.replace(/^\*{1,2}Changelog\*{1,2}\s*\n*/gim, '');
+
+  // Remove "What's Changed" headings — handle straight and curly apostrophes, all heading levels
+  cleaned = cleaned.replace(/^#{1,3}\s+What[''\u2019]s Changed\s*\n*/gim, '');
+  cleaned = cleaned.replace(/^\*{1,2}What[''\u2019]s Changed\*{1,2}\s*\n*/gim, '');
 
   // Remove "## What's Changed" heading (GitHub auto-generates it, but the embed field already provides this label)
   cleaned = cleaned.replace(/^##\s+What's Changed\s*\n*/im, '');
