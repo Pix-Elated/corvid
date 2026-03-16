@@ -55,19 +55,50 @@ function generateMarkerId(m: MarkerPayload): string {
   return `c_${createHash('sha256').update(fingerprint).digest('hex').slice(0, 8)}`;
 }
 
+/** Build a diff table showing what changed in an edit. */
+function buildDiffSection(
+  original: { name: string; x: number; y: number; description?: string; region?: string },
+  edited: MarkerPayload
+): string {
+  const fields: { label: string; old: string; new: string }[] = [];
+  if (original.name !== edited.name) {
+    fields.push({ label: 'Name', old: original.name, new: edited.name });
+  }
+  if (original.x !== edited.x || original.y !== edited.y) {
+    fields.push({
+      label: 'Position',
+      old: `${original.x}, ${original.y}`,
+      new: `${edited.x}, ${edited.y}`,
+    });
+  }
+  if ((original.description || '') !== (edited.description || '')) {
+    fields.push({
+      label: 'Description',
+      old: original.description || '_(empty)_',
+      new: edited.description || '_(empty)_',
+    });
+  }
+  if ((original.region || '') !== (edited.region || '')) {
+    fields.push({
+      label: 'Region',
+      old: original.region || '_(empty)_',
+      new: edited.region || '_(empty)_',
+    });
+  }
+  if (fields.length === 0) return '_No changes detected._';
+
+  const rows = fields.map((f) => `| ${f.label} | ${f.old} | ${f.new} |`).join('\n');
+  return '| Field | Before | After |\n|-------|--------|-------|\n' + rows;
+}
+
 /** Build the GitHub issue body (markdown table + JSON block). */
 function buildIssueBody(
   markers: MarkerPayload[],
   screenshot: string | undefined,
-  authorName: string | undefined
+  authorName: string | undefined,
+  originalMarker?: { name: string; x: number; y: number; description?: string; region?: string }
 ): string {
-  const rows = markers
-    .map((m) => {
-      const desc = m.description || '';
-      const author = authorName || 'Anonymous';
-      return `| ${m.category} | ${m.name} | ${m.x} | ${m.y} | ${m.floor} | ${desc} | ${author} |`;
-    })
-    .join('\n');
+  const isEdit = markers.length === 1 && markers[0].correction;
 
   const json = JSON.stringify(
     markers.map((m) => ({
@@ -88,7 +119,35 @@ function buildIssueBody(
 
   const screenshotComment = screenshot ? `\n<!-- RHUD_SCREENSHOT:${screenshot} -->\n` : '';
 
-  const parts = [
+  // Edit submissions get a diff table instead of the standard marker table
+  if (isEdit && originalMarker) {
+    const diff = buildDiffSection(originalMarker, markers[0]);
+    return [
+      '## RavenHUD Map Marker Edit\n',
+      `**Marker**: ${originalMarker.name} (\`${generateMarkerId(markers[0])}\`)`,
+      `**Exported**: ${new Date().toISOString().split('T')[0]}`,
+      authorName ? `**Contributor**: ${authorName}\n` : '',
+      '### Changes\n',
+      diff,
+      '',
+      screenshotComment,
+      '<details><summary>Raw JSON (for automated import)</summary>\n',
+      '```json',
+      json,
+      '```',
+      '</details>',
+    ].join('\n');
+  }
+
+  const rows = markers
+    .map((m) => {
+      const desc = m.description || '';
+      const author = authorName || 'Anonymous';
+      return `| ${m.category} | ${m.name} | ${m.x} | ${m.y} | ${m.floor} | ${desc} | ${author} |`;
+    })
+    .join('\n');
+
+  return [
     '## RavenHUD Map Marker Contribution\n',
     `**Exported**: ${new Date().toISOString().split('T')[0]}`,
     authorName ? `**Contributor**: ${authorName}\n` : '',
@@ -102,9 +161,7 @@ function buildIssueBody(
     json,
     '```',
     '</details>',
-  ];
-
-  return parts.join('\n');
+  ].join('\n');
 }
 
 /**
@@ -157,16 +214,22 @@ markersRouter.post('/markers/submit', submitLimiter, async (req: Request, res: R
     return;
   }
 
-  // Build issue
-  const hasCorrections = body.markers.some((m) => m.correction);
-  const title =
-    body.markers.length === 1
-      ? `Map Marker${hasCorrections ? ' Correction' : ''}: ${body.markers[0].name}`
+  // Build issue — edits get a different title, label, and diff in the body
+  const isEdit = body.markers.length === 1 && body.markers[0].correction;
+  const title = isEdit
+    ? `Edit: ${body.markers[0].name}`
+    : body.markers.length === 1
+      ? `Map Marker: ${body.markers[0].name}`
       : `Map Markers: ${body.markers.length} contributions`;
 
-  const issueBody = buildIssueBody(body.markers, body.screenshot, body.authorName);
+  const issueBody = buildIssueBody(
+    body.markers,
+    body.screenshot,
+    body.authorName,
+    body.originalMarker
+  );
   const labels = ['map-markers'];
-  if (hasCorrections) labels.push('correction');
+  if (isEdit) labels.push('edit');
 
   try {
     const ghRes = await fetch(`${GITHUB_API}/repos/${PUBLIC_REPO}/issues`, {
