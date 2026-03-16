@@ -14,11 +14,20 @@ export interface MarkerPayload {
   description?: string;
 }
 
+export interface OriginalMarker {
+  name: string;
+  x: number;
+  y: number;
+  description?: string;
+  region?: string;
+}
+
 export interface MarkerSubmitRequest {
   markers: MarkerPayload[];
   screenshot?: string; // base64 webp
   authorName?: string;
   authorDiscordId?: string;
+  originalMarker?: OriginalMarker; // Present for edits — original values for diff
 }
 
 export interface MarkerSubmitResponse {
