@@ -99,11 +99,13 @@ function buildIssueBody(
   originalMarker?: { name: string; x: number; y: number; description?: string; region?: string }
 ): string {
   const isEdit = markers.length === 1 && markers[0].correction;
+  const isDeletion = markers.length === 1 && markers[0].deletion;
 
   const json = JSON.stringify(
     markers.map((m) => ({
       id: generateMarkerId(m),
       ...(m.correction ? { correction: true } : {}),
+      ...(m.deletion ? { deletion: true } : {}),
       category: m.category,
       name: m.name,
       x: m.x,
@@ -118,6 +120,28 @@ function buildIssueBody(
   );
 
   const screenshotComment = screenshot ? `\n<!-- RHUD_SCREENSHOT:${screenshot} -->\n` : '';
+
+  // Deletion requests get a simple body
+  if (isDeletion) {
+    return [
+      '## RavenHUD Map Marker Deletion Request\n',
+      `**Marker**: ${markers[0].name} (\`${generateMarkerId(markers[0])}\`)`,
+      `**Category**: ${markers[0].category}`,
+      `**Position**: ${markers[0].x}, ${markers[0].y} (${markers[0].floor})`,
+      markers[0].region ? `**Region**: ${markers[0].region}` : '',
+      `**Exported**: ${new Date().toISOString().split('T')[0]}`,
+      authorName ? `**Requested by**: ${authorName}\n` : '',
+      markers[0].description ? `**Reason**: ${markers[0].description}\n` : '',
+      screenshotComment,
+      '<details><summary>Raw JSON (for automated import)</summary>\n',
+      '```json',
+      json,
+      '```',
+      '</details>',
+    ]
+      .filter(Boolean)
+      .join('\n');
+  }
 
   // Edit submissions get a diff table instead of the standard marker table
   if (isEdit && originalMarker) {
@@ -214,13 +238,16 @@ markersRouter.post('/markers/submit', submitLimiter, async (req: Request, res: R
     return;
   }
 
-  // Build issue — edits get a different title, label, and diff in the body
+  // Build issue — edits/deletions get different title, label, and body
   const isEdit = body.markers.length === 1 && body.markers[0].correction;
-  const title = isEdit
-    ? `Edit: ${body.markers[0].name}`
-    : body.markers.length === 1
-      ? `Map Marker: ${body.markers[0].name}`
-      : `Map Markers: ${body.markers.length} contributions`;
+  const isDeletion = body.markers.length === 1 && body.markers[0].deletion;
+  const title = isDeletion
+    ? `Delete: ${body.markers[0].name}`
+    : isEdit
+      ? `Edit: ${body.markers[0].name}`
+      : body.markers.length === 1
+        ? `Map Marker: ${body.markers[0].name}`
+        : `Map Markers: ${body.markers.length} contributions`;
 
   const issueBody = buildIssueBody(
     body.markers,
@@ -230,6 +257,7 @@ markersRouter.post('/markers/submit', submitLimiter, async (req: Request, res: R
   );
   const labels = ['map-markers'];
   if (isEdit) labels.push('edit');
+  if (isDeletion) labels.push('deletion');
 
   try {
     const ghRes = await fetch(`${GITHUB_API}/repos/${PUBLIC_REPO}/issues`, {
