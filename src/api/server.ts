@@ -10,6 +10,7 @@ const ALLOWED_ORIGINS = [
   'https://ravenhud.com',
   'https://www.ravenhud.com',
   'https://therealpixelated.github.io',
+  'https://pix-elated.github.io',
 ];
 
 // Rate limiter: 100 requests per 15 minutes per IP
