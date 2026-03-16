@@ -5,6 +5,8 @@ export interface MarkerPayload {
   id?: string;
   /** When true, this is a correction to an existing base marker (not a new marker) */
   correction?: boolean;
+  /** When true, this is a request to delete an existing base marker */
+  deletion?: boolean;
   category: string;
   name: string;
   x: number;
