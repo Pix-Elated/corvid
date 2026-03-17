@@ -1,5 +1,12 @@
 import { Router, Request, Response } from 'express';
-import { Client, EmbedBuilder, TextChannel } from 'discord.js';
+import {
+  Client,
+  EmbedBuilder,
+  TextChannel,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+} from 'discord.js';
 
 export const bansRouter = Router();
 
@@ -114,7 +121,15 @@ async function sendIdentityLog(
       )
       .setTimestamp(body.timestamp ? new Date(body.timestamp) : new Date());
 
-    await channel.send({ embeds: [embed] });
+    const banButton = new ButtonBuilder()
+      .setCustomId(`ban_from_log_${Date.now()}`)
+      .setLabel('Ban')
+      .setStyle(ButtonStyle.Danger)
+      .setEmoji('🔨');
+
+    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(banButton);
+
+    await channel.send({ embeds: [embed], components: [row] });
   } catch (err) {
     console.error('[Bans] Failed to send identity log:', err);
   }
