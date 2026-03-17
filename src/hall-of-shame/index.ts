@@ -125,3 +125,12 @@ export function startBanListRefresh(guild: Guild, client: Client): void {
 
   console.log('[HallOfShame] Daily ban list refresh scheduled');
 }
+
+/** Stop the ban list refresh interval. Call during shutdown. */
+export function stopBanListRefresh(): void {
+  if (refreshInterval) {
+    clearInterval(refreshInterval);
+    refreshInterval = null;
+    console.log('[HallOfShame] Ban list refresh stopped');
+  }
+}
