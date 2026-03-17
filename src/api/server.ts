@@ -4,6 +4,7 @@ import rateLimit from 'express-rate-limit';
 import { statusRouter } from './routes/status';
 import { healthRouter } from './routes/health';
 import { markersRouter } from './routes/markers';
+import { bansRouter } from './routes/bans';
 
 // Allowed origins for CORS
 const ALLOWED_ORIGINS = [
@@ -57,6 +58,7 @@ export function createApiServer(): Application {
   // Mount routes
   app.use('/api', statusRouter);
   app.use('/api', markersRouter);
+  app.use('/api', bansRouter);
   app.use('/', healthRouter);
 
   // 404 handler
