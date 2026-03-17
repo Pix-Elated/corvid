@@ -5,6 +5,7 @@ export const bansRouter = Router();
 
 let discordClient: Client | null = null;
 const MOD_LOG_CHANNEL = 'moderation-log';
+const RAVENHUD_LOG_CHANNEL = 'ravenhud-logs';
 
 /** Set the Discord client so ban reports can post to the mod log */
 export function setBansDiscordClient(client: Client): void {
@@ -46,6 +47,78 @@ bansRouter.post('/bans/report', (req: Request, res: Response) => {
 
   res.json({ success: true });
 });
+
+/**
+ * POST /api/bans/identity-log
+ * Logs every identity submission from the website worldmap.
+ * Posts to #ravenhud-logs channel for moderation review.
+ */
+bansRouter.post('/bans/identity-log', (req: Request, res: Response) => {
+  const body = req.body as {
+    characterName?: string;
+    guildTag?: string;
+    timestamp?: string;
+  };
+
+  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+
+  console.log('[Bans] Identity logged:', {
+    ip,
+    characterName: body.characterName,
+    guildTag: body.guildTag,
+    timestamp: body.timestamp,
+  });
+
+  void sendIdentityLog(body, String(ip));
+
+  res.json({ success: true });
+});
+
+async function sendIdentityLog(
+  body: { characterName?: string; guildTag?: string; timestamp?: string },
+  ip: string
+): Promise<void> {
+  if (!discordClient) return;
+
+  try {
+    const guild = discordClient.guilds.cache.first();
+    if (!guild) return;
+
+    // Use or create #ravenhud-logs channel
+    let channel = guild.channels.cache.find(
+      (ch) => ch.name === RAVENHUD_LOG_CHANNEL && ch instanceof TextChannel
+    ) as TextChannel | undefined;
+
+    if (!channel) {
+      // Find moderation category to create channel under
+      const modCategory = guild.channels.cache.find(
+        (ch) => ch.name.toLowerCase().includes('moderation') && ch.type === 4
+      );
+
+      const created = await guild.channels.create({
+        name: RAVENHUD_LOG_CHANNEL,
+        type: 0, // GuildText
+        parent: modCategory?.id,
+        topic: 'Worldmap identity submissions and ban triggers — automated by Corvid',
+      });
+      channel = created as TextChannel;
+    }
+
+    const embed = new EmbedBuilder()
+      .setTitle('Worldmap Identity')
+      .setColor(0x3498db)
+      .addFields(
+        { name: 'Character', value: body.characterName || 'N/A', inline: true },
+        { name: 'Guild', value: body.guildTag || 'none', inline: true },
+        { name: 'IP', value: `\`${ip}\``, inline: true }
+      )
+      .setTimestamp(body.timestamp ? new Date(body.timestamp) : new Date());
+
+    await channel.send({ embeds: [embed] });
+  } catch (err) {
+    console.error('[Bans] Failed to send identity log:', err);
+  }
+}
 
 async function sendBanReport(
   body: {
