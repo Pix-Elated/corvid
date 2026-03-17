@@ -310,9 +310,9 @@ markersRouter.post(
   '/markers/submit-screenshot',
   submitLimiter,
   async (req: Request, res: Response) => {
-    const githubPat = process.env.GITHUB_PAT;
+    const githubPat = process.env['github-pat'];
     if (!githubPat) {
-      console.error('[Markers] GITHUB_PAT not configured');
+      console.error('[Markers] github-pat secret not configured');
       res
         .status(503)
         .json({ success: false, error: 'Service not configured' } satisfies MarkerSubmitResponse);
