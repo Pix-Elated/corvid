@@ -17,6 +17,7 @@ import { handleInteractionCreate } from './discord/events/interactionCreate';
 import { handleGuildMemberAdd } from './discord/events/guildMemberAdd';
 import { handleGuildMemberRemove } from './discord/events/guildMemberRemove';
 import { createApiServer, startApiServer } from './api/server';
+import { setBansDiscordClient } from './api/routes/bans';
 import { recordShutdown, sendStartupMessage } from './discord/startup';
 
 let client: Client | null = null;
@@ -122,6 +123,8 @@ async function main(): Promise<void> {
   // Login to Discord
   try {
     await client.login(config.discordBotToken);
+    // Give API routes access to the Discord client for ban reporting
+    setBansDiscordClient(client);
   } catch (error) {
     console.error('[Main] Failed to login to Discord:', error);
     recordShutdown('Failed to login to Discord', undefined, String(error));
