@@ -19,6 +19,8 @@ import { handleGuildMemberRemove } from './discord/events/guildMemberRemove';
 import { createApiServer, startApiServer } from './api/server';
 import { setBansDiscordClient } from './api/routes/bans';
 import { recordShutdown, sendStartupMessage } from './discord/startup';
+import { stopAutoClose } from './tickets/autoclose';
+import { stopBanListRefresh } from './hall-of-shame';
 
 let client: Client | null = null;
 
@@ -142,6 +144,9 @@ async function shutdown(signal: string): Promise<void> {
   const reason =
     signal === 'SIGTERM' ? 'Graceful shutdown (deployment/restart)' : 'Graceful shutdown (manual)';
   recordShutdown(reason, signal);
+
+  stopAutoClose();
+  stopBanListRefresh();
 
   if (client) {
     console.log('[Main] Destroying Discord client...');
