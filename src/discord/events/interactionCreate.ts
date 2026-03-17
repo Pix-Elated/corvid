@@ -37,6 +37,7 @@ import {
   handleConvertModal,
 } from './ticketHandler';
 import { handlePublishButton, handlePublishModal, handleDiscardButton } from './releaseHandler';
+import { handleBanButton, handleBanModal } from '../../hall-of-shame/ban-button';
 
 const VERIFIED_ROLE_NAME = 'Verified';
 const UPDATES_ROLE_NAME = 'Updates';
@@ -275,6 +276,12 @@ export async function handleInteractionCreate(interaction: Interaction): Promise
       return;
     }
 
+    // Worldmap ban button (from #ravenhud-logs identity cards)
+    if (buttonId.startsWith('ban_from_log_')) {
+      await handleBanButton(interaction);
+      return;
+    }
+
     // Release announcement buttons
     if (buttonId === 'release_publish') {
       await handlePublishButton(interaction);
@@ -300,6 +307,10 @@ export async function handleInteractionCreate(interaction: Interaction): Promise
     }
     if (interaction.customId === 'release_modal') {
       await handlePublishModal(interaction);
+      return;
+    }
+    if (interaction.customId.startsWith('ban_modal_')) {
+      await handleBanModal(interaction);
       return;
     }
     if (interaction.customId.startsWith('verify_captcha_')) {
