@@ -1,9 +1,9 @@
 /**
- * Hall of Shame — Discord Ban Button + Modal
+ * Hall of Shame — Discord Ban Buttons + Modals
  *
- * Adds a "Ban" button to identity log embeds in #ravenhud-logs.
- * Clicking shows a modal to choose: ban character, guild, or both + reason.
- * On submit: commits new entries to hall-of-shame.json via GitHub API.
+ * Three buttons on identity log embeds: Ban User, Ban Guild, Ban IP.
+ * Each opens a focused modal. On submit: commits new entry to hall-of-shame.json
+ * via GitHub API.
  */
 
 import {
@@ -15,13 +15,14 @@ import {
   ModalSubmitInteraction,
   EmbedBuilder,
 } from 'discord.js';
+import { invalidateBanListCache } from './ban-list-cache';
 
 const GITHUB_API = 'https://api.github.com';
 const REPO = 'Pix-Elated/ravenhud';
 const BAN_FILE_PATH = 'data/hall-of-shame.json';
 
 interface BanEntry {
-  type: 'character' | 'guild' | 'discord';
+  type: 'character' | 'guild' | 'discord' | 'ip';
   name: string;
   reason: string;
   added: string;
@@ -32,44 +33,48 @@ interface BanList {
   entries: BanEntry[];
 }
 
-/**
- * Handle the "Ban" button click on an identity log embed.
- * Shows a modal asking for ban type selection and reason.
- */
-export async function handleBanButton(interaction: ButtonInteraction): Promise<void> {
-  // Extract character name, guild tag, and IP from the embed
+// =============================================================================
+// Embed field extraction helpers
+// =============================================================================
+
+function extractEmbedFields(
+  interaction: ButtonInteraction
+): { charName: string; guildTag: string; ip: string } | null {
   const embed = interaction.message.embeds[0];
-  if (!embed) {
-    await interaction.reply({ content: 'Could not read embed data.', ephemeral: true });
-    return;
-  }
+  if (!embed) return null;
 
   const charField = embed.fields.find((f) => f.name === 'Character');
   const guildField = embed.fields.find((f) => f.name === 'Guild');
   const ipField = embed.fields.find((f) => f.name === 'IP');
 
-  const charName = charField?.value || '';
-  const guildTag = guildField?.value || '';
+  return {
+    charName: charField?.value !== 'N/A' ? charField?.value || '' : '',
+    guildTag: guildField?.value !== 'none' ? guildField?.value || '' : '',
+    ip: ipField?.value?.replace(/`/g, '') || '',
+  };
+}
 
-  // Build modal
+// =============================================================================
+// Button handlers — show type-specific modals
+// =============================================================================
+
+export async function handleBanUserButton(interaction: ButtonInteraction): Promise<void> {
+  const fields = extractEmbedFields(interaction);
+  if (!fields) {
+    await interaction.reply({ content: 'Could not read embed data.', ephemeral: true });
+    return;
+  }
+
   const modal = new ModalBuilder()
-    .setCustomId(`ban_modal_${interaction.message.id}`)
-    .setTitle('Ban User from Worldmap');
+    .setCustomId(`ban_user_modal_${interaction.message.id}`)
+    .setTitle('Ban Character from Worldmap');
 
   const charInput = new TextInputBuilder()
     .setCustomId('ban_character')
-    .setLabel('Character Name (leave blank to skip)')
+    .setLabel('Character Name')
     .setStyle(TextInputStyle.Short)
-    .setValue(charName !== 'N/A' ? charName : '')
-    .setRequired(false)
-    .setMaxLength(30);
-
-  const guildInput = new TextInputBuilder()
-    .setCustomId('ban_guild')
-    .setLabel('Guild Tag (leave blank to skip)')
-    .setStyle(TextInputStyle.Short)
-    .setValue(guildTag !== 'none' ? guildTag : '')
-    .setRequired(false)
+    .setValue(fields.charName)
+    .setRequired(true)
     .setMaxLength(30);
 
   const reasonInput = new TextInputBuilder()
@@ -80,40 +85,132 @@ export async function handleBanButton(interaction: ButtonInteraction): Promise<v
     .setRequired(true)
     .setMaxLength(100);
 
-  const ipInput = new TextInputBuilder()
-    .setCustomId('ban_ip')
-    .setLabel('IP (auto-filled, for reference)')
-    .setStyle(TextInputStyle.Short)
-    .setValue(ipField?.value?.replace(/`/g, '') || '')
-    .setRequired(false);
-
   modal.addComponents(
     new ActionRowBuilder<TextInputBuilder>().addComponents(charInput),
-    new ActionRowBuilder<TextInputBuilder>().addComponents(guildInput),
-    new ActionRowBuilder<TextInputBuilder>().addComponents(reasonInput),
-    new ActionRowBuilder<TextInputBuilder>().addComponents(ipInput)
+    new ActionRowBuilder<TextInputBuilder>().addComponents(reasonInput)
   );
 
   await interaction.showModal(modal);
 }
 
-/**
- * Handle the ban modal submission. Commits new entries to hall-of-shame.json.
- */
-export async function handleBanModal(interaction: ModalSubmitInteraction): Promise<void> {
-  const charName = interaction.fields.getTextInputValue('ban_character').trim();
-  const guildTag = interaction.fields.getTextInputValue('ban_guild').trim();
-  const reason = interaction.fields.getTextInputValue('ban_reason').trim();
-  const ip = interaction.fields.getTextInputValue('ban_ip').trim();
-
-  if (!charName && !guildTag) {
-    await interaction.reply({
-      content: 'You must provide at least a character name or guild tag to ban.',
-      ephemeral: true,
-    });
+export async function handleBanGuildButton(interaction: ButtonInteraction): Promise<void> {
+  const fields = extractEmbedFields(interaction);
+  if (!fields) {
+    await interaction.reply({ content: 'Could not read embed data.', ephemeral: true });
     return;
   }
 
+  const modal = new ModalBuilder()
+    .setCustomId(`ban_guild_modal_${interaction.message.id}`)
+    .setTitle('Ban Guild from Worldmap');
+
+  const guildInput = new TextInputBuilder()
+    .setCustomId('ban_guild')
+    .setLabel('Guild Tag')
+    .setStyle(TextInputStyle.Short)
+    .setValue(fields.guildTag)
+    .setRequired(true)
+    .setMaxLength(30);
+
+  const reasonInput = new TextInputBuilder()
+    .setCustomId('ban_reason')
+    .setLabel('Reason')
+    .setStyle(TextInputStyle.Short)
+    .setValue('Community abuse')
+    .setRequired(true)
+    .setMaxLength(100);
+
+  modal.addComponents(
+    new ActionRowBuilder<TextInputBuilder>().addComponents(guildInput),
+    new ActionRowBuilder<TextInputBuilder>().addComponents(reasonInput)
+  );
+
+  await interaction.showModal(modal);
+}
+
+export async function handleBanIPButton(interaction: ButtonInteraction): Promise<void> {
+  const fields = extractEmbedFields(interaction);
+  if (!fields) {
+    await interaction.reply({ content: 'Could not read embed data.', ephemeral: true });
+    return;
+  }
+
+  const modal = new ModalBuilder()
+    .setCustomId(`ban_ip_modal_${interaction.message.id}`)
+    .setTitle('Ban IP from Worldmap');
+
+  const ipInput = new TextInputBuilder()
+    .setCustomId('ban_ip')
+    .setLabel('IP Address')
+    .setStyle(TextInputStyle.Short)
+    .setValue(fields.ip)
+    .setRequired(true)
+    .setMaxLength(45);
+
+  const reasonInput = new TextInputBuilder()
+    .setCustomId('ban_reason')
+    .setLabel('Reason')
+    .setStyle(TextInputStyle.Short)
+    .setValue('Community abuse')
+    .setRequired(true)
+    .setMaxLength(100);
+
+  modal.addComponents(
+    new ActionRowBuilder<TextInputBuilder>().addComponents(ipInput),
+    new ActionRowBuilder<TextInputBuilder>().addComponents(reasonInput)
+  );
+
+  await interaction.showModal(modal);
+}
+
+// =============================================================================
+// Modal handlers — commit ban entry to GitHub
+// =============================================================================
+
+export async function handleBanUserModal(interaction: ModalSubmitInteraction): Promise<void> {
+  const charName = interaction.fields.getTextInputValue('ban_character').trim();
+  const reason = interaction.fields.getTextInputValue('ban_reason').trim();
+
+  if (!charName) {
+    await interaction.reply({ content: 'Character name is required.', ephemeral: true });
+    return;
+  }
+
+  await commitBanEntry({ type: 'character', name: charName, reason }, interaction);
+}
+
+export async function handleBanGuildModal(interaction: ModalSubmitInteraction): Promise<void> {
+  const guildTag = interaction.fields.getTextInputValue('ban_guild').trim();
+  const reason = interaction.fields.getTextInputValue('ban_reason').trim();
+
+  if (!guildTag) {
+    await interaction.reply({ content: 'Guild tag is required.', ephemeral: true });
+    return;
+  }
+
+  await commitBanEntry({ type: 'guild', name: guildTag, reason }, interaction);
+}
+
+export async function handleBanIPModal(interaction: ModalSubmitInteraction): Promise<void> {
+  const ip = interaction.fields.getTextInputValue('ban_ip').trim();
+  const reason = interaction.fields.getTextInputValue('ban_reason').trim();
+
+  if (!ip) {
+    await interaction.reply({ content: 'IP address is required.', ephemeral: true });
+    return;
+  }
+
+  await commitBanEntry({ type: 'ip', name: ip, reason }, interaction);
+}
+
+// =============================================================================
+// Shared commit logic
+// =============================================================================
+
+async function commitBanEntry(
+  entry: { type: BanEntry['type']; name: string; reason: string },
+  interaction: ModalSubmitInteraction
+): Promise<void> {
   await interaction.deferReply({ ephemeral: true });
 
   const githubPat = process.env['github-pat'];
@@ -139,39 +236,30 @@ export async function handleBanModal(interaction: ModalSubmitInteraction): Promi
     const fileData = (await fileRes.json()) as { content: string; sha: string };
     const banList: BanList = JSON.parse(Buffer.from(fileData.content, 'base64').toString('utf-8'));
 
-    const today = new Date().toISOString().split('T')[0];
-    const newEntries: BanEntry[] = [];
+    // Check for duplicate (case-insensitive for names, exact for IPs)
+    const isDuplicate = banList.entries.some((e) => {
+      if (e.type !== entry.type) return false;
+      if (entry.type === 'ip') return e.name === entry.name;
+      return e.name.toLowerCase() === entry.name.toLowerCase();
+    });
 
-    if (charName) {
-      // Check for duplicate
-      const exists = banList.entries.some(
-        (e) => e.type === 'character' && e.name.toLowerCase() === charName.toLowerCase()
-      );
-      if (!exists) {
-        newEntries.push({ type: 'character', name: charName, reason, added: today });
-      }
-    }
-
-    if (guildTag) {
-      const exists = banList.entries.some(
-        (e) => e.type === 'guild' && e.name.toLowerCase() === guildTag.toLowerCase()
-      );
-      if (!exists) {
-        newEntries.push({ type: 'guild', name: guildTag, reason, added: today });
-      }
-    }
-
-    if (newEntries.length === 0) {
-      await interaction.editReply('All specified names/guilds are already banned.');
+    if (isDuplicate) {
+      await interaction.editReply(`\`${entry.name}\` (${entry.type}) is already banned.`);
       return;
     }
 
-    banList.entries.push(...newEntries);
+    const today = new Date().toISOString().split('T')[0];
+    const newEntry: BanEntry = {
+      type: entry.type,
+      name: entry.name,
+      reason: entry.reason,
+      added: today,
+    };
+    banList.entries.push(newEntry);
 
     // Commit updated ban list
     const updatedContent = Buffer.from(JSON.stringify(banList, null, 2) + '\n').toString('base64');
-
-    const entryNames = newEntries.map((e) => `${e.type}:${e.name}`).join(', ');
+    const entryLabel = `${entry.type}:${entry.name}`;
 
     const commitRes = await fetch(`${GITHUB_API}/repos/${REPO}/contents/${BAN_FILE_PATH}`, {
       method: 'PUT',
@@ -181,7 +269,7 @@ export async function handleBanModal(interaction: ModalSubmitInteraction): Promi
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        message: `ban: add ${entryNames}`,
+        message: `ban: add ${entryLabel}`,
         content: updatedContent,
         sha: fileData.sha,
       }),
@@ -193,27 +281,33 @@ export async function handleBanModal(interaction: ModalSubmitInteraction): Promi
       return;
     }
 
-    // Success — update the original embed to show it's been actioned
+    // Invalidate cached ban list so IP checks pick up new bans immediately
+    invalidateBanListCache();
+
+    // Build confirmation embed
+    const typeLabels: Record<BanEntry['type'], string> = {
+      character: 'Character',
+      guild: 'Guild',
+      discord: 'Discord',
+      ip: 'IP',
+    };
+
     const confirmEmbed = new EmbedBuilder()
       .setTitle('User Banned from Worldmap')
       .setColor(0x992d22)
       .addFields(
-        ...newEntries.map((e) => ({
-          name: e.type === 'character' ? 'Character' : 'Guild',
-          value: e.name,
+        {
+          name: typeLabels[entry.type],
+          value: entry.type === 'ip' ? `\`${entry.name}\`` : entry.name,
           inline: true,
-        })),
-        { name: 'Reason', value: reason, inline: true },
+        },
+        { name: 'Reason', value: entry.reason, inline: true },
         { name: 'Banned by', value: interaction.user.tag, inline: true }
       )
       .setTimestamp();
 
-    if (ip) {
-      confirmEmbed.addFields({ name: 'IP', value: `\`${ip}\``, inline: true });
-    }
-
     await interaction.editReply({
-      content: `Banned ${entryNames}. Committed to hall-of-shame.json.`,
+      content: `Banned ${entryLabel}. Committed to hall-of-shame.json.`,
     });
 
     // Post confirmation to the channel

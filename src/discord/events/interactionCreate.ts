@@ -37,7 +37,14 @@ import {
   handleConvertModal,
 } from './ticketHandler';
 import { handlePublishButton, handlePublishModal, handleDiscardButton } from './releaseHandler';
-import { handleBanButton, handleBanModal } from '../../hall-of-shame/ban-button';
+import {
+  handleBanUserButton,
+  handleBanGuildButton,
+  handleBanIPButton,
+  handleBanUserModal,
+  handleBanGuildModal,
+  handleBanIPModal,
+} from '../../hall-of-shame/ban-button';
 
 const VERIFIED_ROLE_NAME = 'Verified';
 const UPDATES_ROLE_NAME = 'Updates';
@@ -276,9 +283,17 @@ export async function handleInteractionCreate(interaction: Interaction): Promise
       return;
     }
 
-    // Worldmap ban button (from #ravenhud-logs identity cards)
-    if (buttonId.startsWith('ban_from_log_')) {
-      await handleBanButton(interaction);
+    // Worldmap ban buttons (from #ravenhud-logs identity cards)
+    if (buttonId.startsWith('ban_user_')) {
+      await handleBanUserButton(interaction);
+      return;
+    }
+    if (buttonId.startsWith('ban_guild_')) {
+      await handleBanGuildButton(interaction);
+      return;
+    }
+    if (buttonId.startsWith('ban_ip_')) {
+      await handleBanIPButton(interaction);
       return;
     }
 
@@ -309,8 +324,16 @@ export async function handleInteractionCreate(interaction: Interaction): Promise
       await handlePublishModal(interaction);
       return;
     }
-    if (interaction.customId.startsWith('ban_modal_')) {
-      await handleBanModal(interaction);
+    if (interaction.customId.startsWith('ban_user_modal_')) {
+      await handleBanUserModal(interaction);
+      return;
+    }
+    if (interaction.customId.startsWith('ban_guild_modal_')) {
+      await handleBanGuildModal(interaction);
+      return;
+    }
+    if (interaction.customId.startsWith('ban_ip_modal_')) {
+      await handleBanIPModal(interaction);
       return;
     }
     if (interaction.customId.startsWith('verify_captcha_')) {
