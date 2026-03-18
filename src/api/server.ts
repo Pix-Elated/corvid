@@ -29,6 +29,9 @@ const limiter = rateLimit({
 export function createApiServer(): Application {
   const app = express();
 
+  // Trust Azure Container Apps reverse proxy so req.ip reflects the real client IP
+  app.set('trust proxy', true);
+
   // Enable CORS with restricted origins
   app.use(
     cors({
