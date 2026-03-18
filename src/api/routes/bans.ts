@@ -7,6 +7,7 @@ import {
   ButtonBuilder,
   ButtonStyle,
 } from 'discord.js';
+import { checkIpBan } from '../../hall-of-shame/ban-list-cache';
 
 export const bansRouter = Router();
 
@@ -35,7 +36,7 @@ bansRouter.post('/bans/report', (req: Request, res: Response) => {
     timestamp?: string;
   };
 
-  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+  const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
 
   console.log('[Bans] Ban triggered:', {
     ip,
@@ -59,6 +60,7 @@ bansRouter.post('/bans/report', (req: Request, res: Response) => {
  * POST /api/bans/identity-log
  * Logs every identity submission from the website worldmap.
  * Posts to #ravenhud-logs channel for moderation review.
+ * Also checks requester IP against ban list and returns ban status.
  */
 bansRouter.post('/bans/identity-log', (req: Request, res: Response) => {
   const body = req.body as {
@@ -67,18 +69,55 @@ bansRouter.post('/bans/identity-log', (req: Request, res: Response) => {
     timestamp?: string;
   };
 
-  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+  const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+  const ipStr = String(ip);
 
   console.log('[Bans] Identity logged:', {
-    ip,
+    ip: ipStr,
     characterName: body.characterName,
     guildTag: body.guildTag,
     timestamp: body.timestamp,
   });
 
-  void sendIdentityLog(body, String(ip));
+  // Log identity to Discord (fire-and-forget)
+  void sendIdentityLog(body, ipStr);
 
-  res.json({ success: true });
+  // Check if this IP is banned and return result
+  void checkIpBan(ipStr)
+    .then((ipBan) => {
+      if (ipBan) {
+        res.json({ success: true, banned: true, reason: ipBan.reason, matchedName: ipBan.name });
+      } else {
+        res.json({ success: true, banned: false });
+      }
+    })
+    .catch(() => {
+      // Fail-open: if ban check fails, let them through
+      res.json({ success: true, banned: false });
+    });
+});
+
+/**
+ * POST /api/bans/ip-check
+ * Checks the requester's IP against the ban list.
+ * Used by the RavenHUD Electron app (main process).
+ * No Discord logging — purely a ban status check.
+ */
+bansRouter.post('/bans/ip-check', (req: Request, res: Response) => {
+  const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+  const ipStr = String(ip);
+
+  void checkIpBan(ipStr)
+    .then((ipBan) => {
+      if (ipBan) {
+        res.json({ banned: true, reason: ipBan.reason, matchedName: ipBan.name });
+      } else {
+        res.json({ banned: false });
+      }
+    })
+    .catch(() => {
+      res.json({ banned: false });
+    });
 });
 
 async function sendIdentityLog(
@@ -121,13 +160,29 @@ async function sendIdentityLog(
       )
       .setTimestamp(body.timestamp ? new Date(body.timestamp) : new Date());
 
-    const banButton = new ButtonBuilder()
-      .setCustomId(`ban_from_log_${Date.now()}`)
-      .setLabel('Ban')
+    const banUserBtn = new ButtonBuilder()
+      .setCustomId(`ban_user_${Date.now()}`)
+      .setLabel('Ban User')
+      .setStyle(ButtonStyle.Primary)
+      .setEmoji('👤');
+
+    const banGuildBtn = new ButtonBuilder()
+      .setCustomId(`ban_guild_${Date.now() + 1}`)
+      .setLabel('Ban Guild')
+      .setStyle(ButtonStyle.Primary)
+      .setEmoji('🏰');
+
+    const banIpBtn = new ButtonBuilder()
+      .setCustomId(`ban_ip_${Date.now() + 2}`)
+      .setLabel('Ban IP')
       .setStyle(ButtonStyle.Danger)
       .setEmoji('🔨');
 
-    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(banButton);
+    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+      banUserBtn,
+      banGuildBtn,
+      banIpBtn
+    );
 
     await channel.send({ embeds: [embed], components: [row] });
   } catch (err) {
