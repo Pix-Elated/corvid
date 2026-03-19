@@ -15,10 +15,10 @@ const MAX_SCREENSHOT_BYTES = 1_500_000; // ~1.5MB base64
 
 export const markersRouter = Router();
 
-// Stricter rate limit for submissions: 10 per 15 minutes per IP
+// Rate limit for submissions: 60 per 15 minutes per IP
 const submitLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: 60,
   standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, error: 'Too many submissions, please try again later.' },
