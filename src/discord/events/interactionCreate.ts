@@ -27,6 +27,7 @@ import {
   clearWarningsCommand,
 } from '../commands/moderation';
 import { scanCommand } from '../commands/scan';
+import { worldmapBanCommand } from '../commands/worldmap-ban';
 import {
   handleTicketButton,
   handleTicketModal,
@@ -394,6 +395,9 @@ export async function handleInteractionCreate(interaction: Interaction): Promise
         break;
       case 'scan':
         await scanCommand.execute(interaction);
+        break;
+      case 'worldmap-ban':
+        await worldmapBanCommand.execute(interaction);
         break;
       default:
         console.warn(`[InteractionCreate] Unknown command: ${commandName}`);

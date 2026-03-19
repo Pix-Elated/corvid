@@ -21,6 +21,7 @@ import {
   clearWarningsCommand,
 } from '../commands/moderation';
 import { scanCommand } from '../commands/scan';
+import { worldmapBanCommand } from '../commands/worldmap-ban';
 import { postOrUpdateBanList, startBanListRefresh } from '../../hall-of-shame';
 
 /**
@@ -83,6 +84,7 @@ async function registerCommands(client: Client): Promise<void> {
     warningsCommand.data.toJSON(),
     clearWarningsCommand.data.toJSON(),
     scanCommand.data.toJSON(),
+    worldmapBanCommand.data.toJSON(),
   ];
 
   const rest = new REST({ version: '10' }).setToken(config.discordBotToken);
