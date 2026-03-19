@@ -15,23 +15,7 @@ import {
   ModalSubmitInteraction,
   EmbedBuilder,
 } from 'discord.js';
-import { invalidateBanListCache } from './ban-list-cache';
-
-const GITHUB_API = 'https://api.github.com';
-const REPO = 'Pix-Elated/ravenhud';
-const BAN_FILE_PATH = 'data/hall-of-shame.json';
-
-interface BanEntry {
-  type: 'character' | 'guild' | 'discord' | 'ip';
-  name: string;
-  reason: string;
-  added: string;
-}
-
-interface BanList {
-  version: number;
-  entries: BanEntry[];
-}
+import { BanEntry, fetchBanListFromGitHub, commitBanList } from './github';
 
 // =============================================================================
 // Embed field extraction helpers
@@ -213,28 +197,8 @@ async function commitBanEntry(
 ): Promise<void> {
   await interaction.deferReply({ ephemeral: true });
 
-  const githubPat = process.env['github-pat'];
-  if (!githubPat) {
-    await interaction.editReply('github-pat secret not configured — cannot update ban list.');
-    return;
-  }
-
   try {
-    // Fetch current ban list from GitHub
-    const fileRes = await fetch(`${GITHUB_API}/repos/${REPO}/contents/${BAN_FILE_PATH}`, {
-      headers: {
-        Authorization: `Bearer ${githubPat}`,
-        Accept: 'application/vnd.github.v3+json',
-      },
-    });
-
-    if (!fileRes.ok) {
-      await interaction.editReply(`Failed to fetch ban list: HTTP ${fileRes.status}`);
-      return;
-    }
-
-    const fileData = (await fileRes.json()) as { content: string; sha: string };
-    const banList: BanList = JSON.parse(Buffer.from(fileData.content, 'base64').toString('utf-8'));
+    const { banList, sha } = await fetchBanListFromGitHub();
 
     // Check for duplicate (case-insensitive for names, exact for IPs)
     const isDuplicate = banList.entries.some((e) => {
@@ -257,32 +221,8 @@ async function commitBanEntry(
     };
     banList.entries.push(newEntry);
 
-    // Commit updated ban list
-    const updatedContent = Buffer.from(JSON.stringify(banList, null, 2) + '\n').toString('base64');
     const entryLabel = `${entry.type}:${entry.name}`;
-
-    const commitRes = await fetch(`${GITHUB_API}/repos/${REPO}/contents/${BAN_FILE_PATH}`, {
-      method: 'PUT',
-      headers: {
-        Authorization: `Bearer ${githubPat}`,
-        Accept: 'application/vnd.github.v3+json',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        message: `ban: add ${entryLabel}`,
-        content: updatedContent,
-        sha: fileData.sha,
-      }),
-    });
-
-    if (!commitRes.ok) {
-      const err = await commitRes.text();
-      await interaction.editReply(`Failed to commit ban: HTTP ${commitRes.status} — ${err}`);
-      return;
-    }
-
-    // Invalidate cached ban list so IP checks pick up new bans immediately
-    invalidateBanListCache();
+    await commitBanList(banList, sha, `ban: add ${entryLabel}`);
 
     // Build confirmation embed
     const typeLabels: Record<BanEntry['type'], string> = {
