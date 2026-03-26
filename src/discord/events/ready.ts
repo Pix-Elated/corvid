@@ -23,7 +23,12 @@ import {
 import { scanCommand } from '../commands/scan';
 import { worldmapBanCommand } from '../commands/worldmap-ban';
 import { postOrUpdateBanList, startBanListRefresh } from '../../hall-of-shame';
-import { questCommand, setupQuestTrackingCommand, startPolling } from '../../quest-tracker';
+import {
+  questCommand,
+  setupQuestTrackingCommand,
+  nftCommand,
+  startPolling,
+} from '../../quest-tracker';
 
 /**
  * Handle the ready event - bot is connected and ready
@@ -91,6 +96,7 @@ async function registerCommands(client: Client): Promise<void> {
     worldmapBanCommand.data.toJSON(),
     questCommand.data.toJSON(),
     setupQuestTrackingCommand.data.toJSON(),
+    nftCommand.data.toJSON(),
   ];
 
   const rest = new REST({ version: '10' }).setToken(config.discordBotToken);
