@@ -286,12 +286,9 @@ function buildSubcategoryLines(category: string, items: NFTItem[]): string[] {
 
     switch (category) {
       case 'land': {
-        // Parse size from attributes OR from name (e.g. "Medium Estate", "Large Estate")
-        const size =
-          item.attributes['Size'] ||
-          item.attributes['Tier'] ||
-          parseSizeFromName(item.name) ||
-          'Unknown';
+        // Parse size from attributes or name. Tier value is "Large Estate" etc — strip "Estate"
+        const rawSize = item.attributes['Size'] || item.attributes['Tier'] || item.name || '';
+        const size = parseSizeFromName(rawSize) || 'Unknown';
         subKey = `${size} Land`;
         break;
       }
@@ -306,12 +303,12 @@ function buildSubcategoryLines(category: string, items: NFTItem[]): string[] {
         break;
       }
       case 'cards': {
-        const rarity = item.attributes['Rarity'] || parseRarityFromName(item.name) || 'RavenCard';
-        subKey = `${rarity} RavenCard`;
+        const rarity = item.attributes['Rarity'] || parseRarityFromName(item.name);
+        subKey = rarity ? `${rarity} RavenCard` : 'RavenCard';
         break;
       }
       case 'cosmetics': {
-        const rarity = item.attributes['Rarity'] || parseRarityFromName(item.name) || '';
+        const rarity = item.attributes['Rarity'] || parseRarityFromName(item.name);
         subKey = rarity ? `${rarity} Cosmetic` : 'Cosmetic';
         break;
       }
