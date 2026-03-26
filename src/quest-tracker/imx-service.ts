@@ -23,12 +23,31 @@ function getHeaders(): Record<string, string> {
 }
 
 async function fetchJson<T>(url: string, headers?: Record<string, string>): Promise<T> {
-  const res = await fetch(url, { headers: headers || getHeaders() });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`HTTP ${res.status} from ${url}: ${text.slice(0, 200)}`);
+  const maxRetries = 3;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const res = await fetch(url, { headers: headers || getHeaders() });
+
+    if (res.status === 429) {
+      // Rate limited — exponential backoff with jitter
+      const retryAfter = res.headers.get('retry-after');
+      const baseDelay = retryAfter ? parseInt(retryAfter, 10) * 1000 : 1000 * Math.pow(2, attempt);
+      const jitter = Math.random() * 500;
+      const delay = baseDelay + jitter;
+      console.warn(
+        `[IMX] 429 rate limited, retrying in ${Math.round(delay)}ms (attempt ${attempt + 1}/${maxRetries})`
+      );
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      continue;
+    }
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`HTTP ${res.status} from ${url}: ${text.slice(0, 200)}`);
+    }
+
+    return res.json() as Promise<T>;
   }
-  return res.json() as Promise<T>;
+  throw new Error(`Rate limited after ${maxRetries} retries: ${url}`);
 }
 
 /** Convert raw QUEST amount (6 decimals) to human-readable */
