@@ -235,3 +235,182 @@ export function statusEmbed(title: string, description: string, success = true):
     .setColor(success ? SUCCESS_COLOR : WHALE_COLOR)
     .setTimestamp();
 }
+
+// ─── NFT Portfolio Embeds ───────────────────────────────────────────────────
+
+import type { Portfolio, PortfolioCategory } from './nft-service';
+
+function fmtImx(n: number): string {
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
+  return n.toFixed(1);
+}
+
+function fmtUsd(n: number): string {
+  if (n >= 1000) return `$${(n / 1000).toFixed(1)}K`;
+  return `$${n.toFixed(2)}`;
+}
+
+/**
+ * Build the main portfolio summary embed.
+ */
+export function portfolioEmbed(portfolio: Portfolio): EmbedBuilder {
+  const pnlImx = portfolio.totalValueImx - portfolio.totalCostImx;
+  const pnlUsd = portfolio.totalValueUsd - portfolio.totalCostUsd;
+  const roi =
+    portfolio.totalCostUsd > 0
+      ? ((portfolio.totalValueUsd - portfolio.totalCostUsd) / portfolio.totalCostUsd) * 100
+      : null;
+
+  const embed = new EmbedBuilder()
+    .setTitle(`🎒 NFT Portfolio — ${shortAddr(portfolio.wallet)}`)
+    .setURL(`${EXPLORER_BASE}/address/${portfolio.wallet}`)
+    .setColor(QUEST_COLOR)
+    .addFields(
+      {
+        name: 'Total NFTs',
+        value: `**${portfolio.totalNFTs}**`,
+        inline: true,
+      },
+      {
+        name: 'Current Value',
+        value: `**${fmtImx(portfolio.totalValueImx)} IMX**\n~${fmtUsd(portfolio.totalValueUsd)}`,
+        inline: true,
+      },
+      {
+        name: 'Total Paid',
+        value:
+          portfolio.priceKnownCount > 0
+            ? `**${fmtImx(portfolio.totalCostImx)} IMX**\n~${fmtUsd(portfolio.totalCostUsd)}`
+            : 'Unknown',
+        inline: true,
+      }
+    );
+
+  // P&L if we have cost data
+  if (portfolio.priceKnownCount > 0 && roi !== null) {
+    const sign = pnlImx >= 0 ? '+' : '';
+    const color = pnlImx >= 0 ? '🟢' : '🔴';
+    embed.addFields({
+      name: `${color} P&L`,
+      value: `${sign}${fmtImx(pnlImx)} IMX (~${sign}${fmtUsd(pnlUsd)})\nROI: ${roi >= 0 ? '+' : ''}${roi.toFixed(1)}%`,
+      inline: false,
+    });
+  }
+
+  // Category breakdown
+  const lines = portfolio.categories.map((cat) => {
+    const floorStr = cat.floor?.floorImx
+      ? `${cat.floor.floorImx.toFixed(1)} IMX floor`
+      : 'no floor';
+    const costStr = cat.priceKnownCount > 0 ? ` · paid ${fmtImx(cat.totalCostImx)} IMX` : '';
+    return `**${cat.name}** — ${cat.count} NFT${cat.count !== 1 ? 's' : ''} (${floorStr}${costStr})`;
+  });
+
+  if (lines.length > 0) {
+    embed.addFields({ name: 'Collections', value: lines.join('\n') });
+  }
+
+  embed
+    .setFooter({
+      text: `IMX: $${portfolio.imxPrice.toFixed(2)} · ${portfolio.priceKnownCount}/${portfolio.totalNFTs} prices known`,
+    })
+    .setTimestamp();
+
+  return embed;
+}
+
+/**
+ * Build a detailed category embed (for /nft detail <category>).
+ */
+export function categoryDetailEmbed(
+  category: PortfolioCategory,
+  wallet: string,
+  imxPrice: number
+): EmbedBuilder {
+  const embed = new EmbedBuilder()
+    .setTitle(`${getCategoryEmoji(category.category)} ${category.name} — ${shortAddr(wallet)}`)
+    .setURL(`${EXPLORER_BASE}/address/${wallet}`)
+    .setColor(getCategoryColor(category.category));
+
+  // Floor info
+  if (category.floor) {
+    embed.addFields(
+      {
+        name: 'Floor',
+        value: category.floor.floorImx
+          ? `${category.floor.floorImx.toFixed(1)} IMX (~${fmtUsd(category.floor.floorUsd || 0)})`
+          : 'None listed',
+        inline: true,
+      },
+      {
+        name: 'Collection Value',
+        value:
+          category.floor.floorImx !== null
+            ? `${fmtImx(category.count * category.floor.floorImx)} IMX`
+            : 'N/A',
+        inline: true,
+      },
+      {
+        name: 'Total Paid',
+        value:
+          category.priceKnownCount > 0
+            ? `${fmtImx(category.totalCostImx)} IMX (~${fmtUsd(category.totalCostUsd)})`
+            : 'Unknown',
+        inline: true,
+      }
+    );
+  }
+
+  // List items (max 15)
+  const items = category.items.slice(0, 15);
+  const itemLines = items.map((item) => {
+    const attrs = [];
+    if (item.attributes['Rarity']) attrs.push(item.attributes['Rarity']);
+    if (item.attributes['Size']) attrs.push(item.attributes['Size']);
+    if (item.attributes['Tier']) attrs.push(`T${item.attributes['Tier']}`);
+    if (item.attributes['Perk']) attrs.push(item.attributes['Perk']);
+    const attrStr = attrs.length > 0 ? ` (${attrs.join(', ')})` : '';
+    const deposit = item.depositState === 'deposited' ? ' 🎮' : '';
+    const price =
+      item.purchasePriceImx !== null ? ` — paid ${item.purchasePriceImx.toFixed(1)} IMX` : '';
+    return `• ${item.name}${attrStr}${deposit}${price}`;
+  });
+
+  if (category.items.length > 15) {
+    itemLines.push(`*...and ${category.items.length - 15} more*`);
+  }
+
+  if (itemLines.length > 0) {
+    embed.addFields({ name: `Items (${category.count})`, value: itemLines.join('\n') });
+  }
+
+  embed
+    .setFooter({
+      text: `🎮 = deposited in-game · IMX: $${imxPrice.toFixed(2)}`,
+    })
+    .setTimestamp();
+
+  return embed;
+}
+
+function getCategoryEmoji(category: string): string {
+  const map: Record<string, string> = {
+    land: '🏡',
+    munks: '🐵',
+    moas: '🦅',
+    cards: '🃏',
+    cosmetics: '👗',
+  };
+  return map[category] || '📦';
+}
+
+function getCategoryColor(category: string): number {
+  const map: Record<string, number> = {
+    land: 0x2ecc71, // Green
+    munks: 0xe67e22, // Orange
+    moas: 0x3498db, // Blue
+    cards: 0x9b59b6, // Purple
+    cosmetics: 0xe91e63, // Pink
+  };
+  return map[category] || QUEST_COLOR;
+}
