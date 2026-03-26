@@ -214,7 +214,7 @@ export async function getWalletNFTs(wallet: string): Promise<NFTItem[]> {
 // ─── Purchase Price Detection ───────────────────────────────────────────────
 
 /**
- * Find NFTs the wallet deposited in-game and add them to the list.
+ * Find NFTs the wallet deposited to vault and add them to the list.
  * Queries the wallet's own transfer history (fast — only their transfers).
  */
 async function addDepositedNFTs(wallet: string, nfts: NFTItem[]): Promise<void> {
@@ -242,7 +242,7 @@ async function addDepositedNFTs(wallet: string, nfts: NFTItem[]): Promise<void> 
           const from = (d.from || '').toLowerCase();
           const to = (d.to || '').toLowerCase();
 
-          // Wallet sent to vault = deposited in-game
+          // Wallet sent to vault = deposited to vault
           if (from === wallet.toLowerCase() && vaultAddrs.has(to)) {
             const tokenId = d.asset.token_id;
             // Skip if already in the list
@@ -629,7 +629,7 @@ async function getDepositedCounts(contractAddr: string): Promise<Map<string, num
 }
 
 /**
- * Get the top NFT holders, including deposited-in-game NFTs.
+ * Get the top NFT holders, including vault-deposited NFTs.
  * @param limit Max results
  * @param category Filter to a single category. Omit for all.
  */
@@ -672,8 +672,8 @@ export async function getNFTWhales(limit = 15, category?: string): Promise<NFTWh
         for (const [depositor, count] of depositCounts) {
           const existing = walletTotals.get(depositor) || { total: 0, breakdown: {} };
           existing.total += count;
-          existing.breakdown[`${collection.name} (in-game)`] =
-            (existing.breakdown[`${collection.name} (in-game)`] || 0) + count;
+          existing.breakdown[`${collection.name} (deposited)`] =
+            (existing.breakdown[`${collection.name} (deposited)`] || 0) + count;
           walletTotals.set(depositor, existing);
         }
       } catch (error) {
