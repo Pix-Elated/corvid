@@ -43,12 +43,6 @@ const ERC20_MAP: Record<string, { symbol: string; decimals: number }> = {
   '0x8a1e8cf52954c8d72907774d4b2b81f38dd1c5c4': { symbol: 'QUEST', decimals: 6 },
 };
 
-/** Game deposit custody addresses */
-const DEPOSIT_ADDRESSES = new Set([
-  '0xe597f8370e99fe87de34e0c0fa863920cb39ca02',
-  '0x7959c306cce2f25d4553b2c786a852d0801a3638',
-]);
-
 function getHeaders(): Record<string, string> {
   const key = process.env['immutable-key'] || '';
   return {
@@ -168,124 +162,54 @@ interface RawNFT {
 
 /**
  * Fetch all RavenQuest NFTs owned by a wallet.
+ * Parallelizes across collections for speed.
  */
 export async function getWalletNFTs(wallet: string): Promise<NFTItem[]> {
-  const allNFTs: NFTItem[] = [];
   const contractAddresses = Object.keys(RQ_COLLECTIONS);
 
-  // Fetch deposited token IDs (transferred to game custody)
-  const depositedIds = await getDepositedTokenIds(wallet);
+  // Fetch all collections + deposits in parallel
+  const results = await Promise.all(
+    contractAddresses.map(async (contractAddr) => {
+      const collection = RQ_COLLECTIONS[contractAddr];
+      const items: NFTItem[] = [];
 
-  for (const contractAddr of contractAddresses) {
-    const collection = RQ_COLLECTIONS[contractAddr];
-    let cursor: string | null = null;
-
-    // Fetch NFTs in wallet
-    do {
-      const params = new URLSearchParams({
-        account_address: wallet,
-        contract_address: contractAddr,
-        page_size: '200',
-      });
-      if (cursor) params.set('page_cursor', cursor);
-
-      const url = `${IMX_BASE}/${CHAIN}/nfts?${params}`;
-      const data = await fetchJson<{
-        result: RawNFT[];
-        page?: { next_cursor?: string };
-      }>(url);
-
-      for (const nft of data.result || []) {
-        const attrs = extractAttributes(nft);
-        allNFTs.push({
-          tokenId: nft.token_id,
-          name: nft.name || attrs['Name'] || `${collection.name} #${nft.token_id}`,
-          contractAddress: contractAddr,
-          category: collection.category,
-          image: nft.image || null,
-          attributes: attrs,
-          depositState: 'blockchain',
-          purchasePriceImx: null,
-          purchasePriceUsd: null,
-          purchaseCurrency: null,
+      try {
+        // Fetch NFTs in wallet (first page only — 200 is plenty per collection)
+        const params = new URLSearchParams({
+          account_address: wallet,
+          contract_address: contractAddr,
+          page_size: '200',
         });
-      }
+        const url = `${IMX_BASE}/${CHAIN}/nfts?${params}`;
+        const data = await fetchJson<{
+          result: RawNFT[];
+          page?: { next_cursor?: string };
+        }>(url);
 
-      cursor = data.page?.next_cursor || null;
-    } while (cursor);
-
-    // Add deposited NFTs (in game custody but still "owned")
-    const depositedForContract = depositedIds.get(contractAddr) || [];
-    for (const tokenId of depositedForContract) {
-      // Skip if already in wallet (shouldn't happen, but safety check)
-      if (allNFTs.some((n) => n.contractAddress === contractAddr && n.tokenId === tokenId))
-        continue;
-
-      allNFTs.push({
-        tokenId,
-        name: `${collection.name} #${tokenId}`,
-        contractAddress: contractAddr,
-        category: collection.category,
-        image: null,
-        attributes: {},
-        depositState: 'deposited',
-        purchasePriceImx: null,
-        purchasePriceUsd: null,
-        purchaseCurrency: null,
-      });
-    }
-  }
-
-  return allNFTs;
-}
-
-/**
- * Get token IDs deposited into game custody for a wallet.
- */
-async function getDepositedTokenIds(wallet: string): Promise<Map<string, string[]>> {
-  const deposited = new Map<string, string[]>();
-
-  for (const contractAddr of Object.keys(RQ_COLLECTIONS)) {
-    try {
-      const params = new URLSearchParams({
-        account_address: wallet,
-        activity_type: 'transfer',
-        contract_address: contractAddr,
-        page_size: '200',
-      });
-
-      const url = `${IMX_BASE}/${CHAIN}/activities?${params}`;
-      const data = await fetchJson<{
-        result: Array<{
-          details?: {
-            from?: string;
-            to?: string;
-            asset?: { token_id?: string };
-          };
-        }>;
-      }>(url);
-
-      const ids: string[] = [];
-      for (const act of data.result || []) {
-        const d = act.details;
-        if (!d) continue;
-        // Wallet sent NFT to a game custody address
-        if (
-          d.from?.toLowerCase() === wallet.toLowerCase() &&
-          d.to &&
-          DEPOSIT_ADDRESSES.has(d.to.toLowerCase()) &&
-          d.asset?.token_id
-        ) {
-          ids.push(d.asset.token_id);
+        for (const nft of data.result || []) {
+          const attrs = extractAttributes(nft);
+          items.push({
+            tokenId: nft.token_id,
+            name: nft.name || attrs['Name'] || `${collection.name} #${nft.token_id}`,
+            contractAddress: contractAddr,
+            category: collection.category,
+            image: nft.image || null,
+            attributes: attrs,
+            depositState: 'blockchain',
+            purchasePriceImx: null,
+            purchasePriceUsd: null,
+            purchaseCurrency: null,
+          });
         }
+      } catch (error) {
+        console.error(`[NFTService] Failed to fetch ${collection.name} NFTs:`, error);
       }
-      if (ids.length > 0) deposited.set(contractAddr, ids);
-    } catch {
-      // Non-critical — continue without deposit detection
-    }
-  }
 
-  return deposited;
+      return items;
+    })
+  );
+
+  return results.flat();
 }
 
 // ─── Purchase Price Detection ───────────────────────────────────────────────
@@ -296,69 +220,73 @@ async function getDepositedTokenIds(wallet: string): Promise<Map<string, string[
 export async function detectPurchasePrices(wallet: string, nfts: NFTItem[]): Promise<void> {
   const prices = await getTokenPrices();
 
-  for (const contractAddr of Object.keys(RQ_COLLECTIONS)) {
-    const contractNfts = nfts.filter((n) => n.contractAddress === contractAddr);
-    if (contractNfts.length === 0) continue;
+  // Parallelize across collections that have NFTs
+  await Promise.all(
+    Object.keys(RQ_COLLECTIONS).map(async (contractAddr) => {
+      const contractNfts = nfts.filter((n) => n.contractAddress === contractAddr);
+      if (contractNfts.length === 0) return;
 
-    try {
-      const params = new URLSearchParams({
-        account_address: wallet,
-        activity_type: 'sale',
-        contract_address: contractAddr,
-        page_size: '200',
-      });
+      try {
+        const params = new URLSearchParams({
+          account_address: wallet,
+          activity_type: 'sale',
+          contract_address: contractAddr,
+          page_size: '200',
+        });
 
-      const url = `${IMX_BASE}/${CHAIN}/activities?${params}`;
-      const data = await fetchJson<{
-        result: Array<{
-          details?: {
-            to?: string;
-            payment?: {
-              token?: { contract_address?: string };
-              price_excluding_fees?: string;
-              price_including_fees?: string;
+        const url = `${IMX_BASE}/${CHAIN}/activities?${params}`;
+        const data = await fetchJson<{
+          result: Array<{
+            details?: {
+              to?: string;
+              payment?: {
+                token?: { contract_address?: string };
+                price_excluding_fees?: string;
+                price_including_fees?: string;
+              };
+              asset?: { token_id?: string; contract_address?: string };
             };
-            asset?: { token_id?: string; contract_address?: string };
-          };
-        }>;
-      }>(url);
+          }>;
+        }>(url);
 
-      for (const act of data.result || []) {
-        const d = act.details;
-        if (!d || d.to?.toLowerCase() !== wallet.toLowerCase()) continue;
+        for (const act of data.result || []) {
+          const d = act.details;
+          if (!d || d.to?.toLowerCase() !== wallet.toLowerCase()) continue;
 
-        const tokenId = d.asset?.token_id;
-        if (!tokenId) continue;
+          const tokenId = d.asset?.token_id;
+          if (!tokenId) continue;
 
-        const nft = contractNfts.find((n) => n.tokenId === tokenId);
-        if (!nft || nft.purchasePriceImx !== null) continue; // Already has price
+          const nft = contractNfts.find((n) => n.tokenId === tokenId);
+          if (!nft || nft.purchasePriceImx !== null) continue; // Already has price
 
-        const rawPrice = d.payment?.price_including_fees || d.payment?.price_excluding_fees || '0';
-        const paymentAddr = d.payment?.token?.contract_address?.toLowerCase() || '';
-        const tokenInfo = ERC20_MAP[paymentAddr];
+          const rawPrice =
+            d.payment?.price_including_fees || d.payment?.price_excluding_fees || '0';
+          const paymentAddr = d.payment?.token?.contract_address?.toLowerCase() || '';
+          const tokenInfo = ERC20_MAP[paymentAddr];
 
-        if (!tokenInfo) continue;
+          if (!tokenInfo) continue;
 
-        const amount = parseFloat(rawPrice) / Math.pow(10, tokenInfo.decimals);
+          const amount = parseFloat(rawPrice) / Math.pow(10, tokenInfo.decimals);
 
-        if (tokenInfo.symbol === 'IMX') {
-          nft.purchasePriceImx = amount;
-          nft.purchasePriceUsd = amount * prices.imx;
-          nft.purchaseCurrency = 'IMX';
-        } else if (tokenInfo.symbol === 'USDC') {
-          nft.purchasePriceUsd = amount;
-          nft.purchasePriceImx = prices.imx > 0 ? amount / prices.imx : null;
-          nft.purchaseCurrency = 'USDC';
-        } else if (tokenInfo.symbol === 'QUEST') {
-          nft.purchasePriceUsd = amount * prices.quest;
-          nft.purchasePriceImx = prices.imx > 0 ? (amount * prices.quest) / prices.imx : null;
-          nft.purchaseCurrency = 'QUEST';
+          if (tokenInfo.symbol === 'IMX') {
+            nft.purchasePriceImx = amount;
+            nft.purchasePriceUsd = amount * prices.imx;
+            nft.purchaseCurrency = 'IMX';
+          } else if (tokenInfo.symbol === 'USDC') {
+            nft.purchasePriceUsd = amount;
+            nft.purchasePriceImx = prices.imx > 0 ? amount / prices.imx : null;
+            nft.purchaseCurrency = 'USDC';
+          } else if (tokenInfo.symbol === 'QUEST') {
+            nft.purchasePriceUsd = amount * prices.quest;
+            nft.purchasePriceImx = prices.imx > 0 ? (amount * prices.quest) / prices.imx : null;
+            nft.purchaseCurrency = 'QUEST';
+          }
         }
+      } catch (error) {
+        console.error(`[NFTService] Failed to detect prices for ${contractAddr}:`, error);
       }
-    } catch (error) {
-      console.error(`[NFTService] Failed to detect prices for ${contractAddr}:`, error);
-    }
-  }
+    })
+  );
 }
 
 // ─── Floor Prices ───────────────────────────────────────────────────────────
@@ -370,73 +298,75 @@ export async function getCollectionFloors(): Promise<Map<string, CollectionFloor
   const floors = new Map<string, CollectionFloor>();
   const prices = await getTokenPrices();
 
-  for (const [contractAddr, collection] of Object.entries(RQ_COLLECTIONS)) {
-    try {
-      const params = new URLSearchParams({
-        sell_item_contract_address: contractAddr,
-        status: 'ACTIVE',
-        page_size: '10',
-        sort_by: 'buy_item_amount',
-        sort_direction: 'asc',
-      });
+  await Promise.all(
+    Object.entries(RQ_COLLECTIONS).map(async ([contractAddr, collection]) => {
+      try {
+        const params = new URLSearchParams({
+          sell_item_contract_address: contractAddr,
+          status: 'ACTIVE',
+          page_size: '10',
+          sort_by: 'buy_item_amount',
+          sort_direction: 'asc',
+        });
 
-      const url = `${IMX_BASE}/${CHAIN}/orders?${params}`;
-      const data = await fetchJson<{
-        result: Array<{
-          buy: Array<{
-            item_type?: string;
-            contract_address?: string;
-            amount?: string;
+        const url = `${IMX_BASE}/${CHAIN}/orders?${params}`;
+        const data = await fetchJson<{
+          result: Array<{
+            buy: Array<{
+              item_type?: string;
+              contract_address?: string;
+              amount?: string;
+            }>;
           }>;
-        }>;
-      }>(url);
+        }>(url);
 
-      let floorImx: number | null = null;
-      let listingCount = 0;
+        let floorImx: number | null = null;
+        let listingCount = 0;
 
-      for (const order of data.result || []) {
-        listingCount++;
-        const buyItem = order.buy?.[0];
-        if (!buyItem?.amount) continue;
+        for (const order of data.result || []) {
+          listingCount++;
+          const buyItem = order.buy?.[0];
+          if (!buyItem?.amount) continue;
 
-        const tokenAddr = buyItem.contract_address?.toLowerCase() || '';
-        const tokenInfo = ERC20_MAP[tokenAddr];
-        if (!tokenInfo) continue;
+          const tokenAddr = buyItem.contract_address?.toLowerCase() || '';
+          const tokenInfo = ERC20_MAP[tokenAddr];
+          if (!tokenInfo) continue;
 
-        const amount = parseFloat(buyItem.amount) / Math.pow(10, tokenInfo.decimals);
-        let imxAmount: number;
+          const amount = parseFloat(buyItem.amount) / Math.pow(10, tokenInfo.decimals);
+          let imxAmount: number;
 
-        if (tokenInfo.symbol === 'IMX') {
-          imxAmount = amount;
-        } else if (tokenInfo.symbol === 'USDC') {
-          imxAmount = prices.imx > 0 ? amount / prices.imx : 0;
-        } else {
-          continue;
+          if (tokenInfo.symbol === 'IMX') {
+            imxAmount = amount;
+          } else if (tokenInfo.symbol === 'USDC') {
+            imxAmount = prices.imx > 0 ? amount / prices.imx : 0;
+          } else {
+            continue;
+          }
+
+          if (floorImx === null || imxAmount < floorImx) {
+            floorImx = imxAmount;
+          }
         }
 
-        if (floorImx === null || imxAmount < floorImx) {
-          floorImx = imxAmount;
-        }
+        floors.set(contractAddr, {
+          contractAddress: contractAddr,
+          category: collection.category,
+          floorImx,
+          floorUsd: floorImx !== null ? floorImx * prices.imx : null,
+          listings: listingCount,
+        });
+      } catch (error) {
+        console.error(`[NFTService] Failed to get floor for ${collection.name}:`, error);
+        floors.set(contractAddr, {
+          contractAddress: contractAddr,
+          category: collection.category,
+          floorImx: null,
+          floorUsd: null,
+          listings: 0,
+        });
       }
-
-      floors.set(contractAddr, {
-        contractAddress: contractAddr,
-        category: collection.category,
-        floorImx,
-        floorUsd: floorImx !== null ? floorImx * prices.imx : null,
-        listings: listingCount,
-      });
-    } catch (error) {
-      console.error(`[NFTService] Failed to get floor for ${collection.name}:`, error);
-      floors.set(contractAddr, {
-        contractAddress: contractAddr,
-        category: collection.category,
-        floorImx: null,
-        floorUsd: null,
-        listings: 0,
-      });
-    }
-  }
+    })
+  );
 
   return floors;
 }
@@ -445,16 +375,21 @@ export async function getCollectionFloors(): Promise<Map<string, CollectionFloor
 
 /**
  * Build complete portfolio for a wallet address.
+ * Timeout after 15s to avoid Discord interaction expiry.
  */
 export async function getPortfolio(wallet: string): Promise<Portfolio> {
+  const timeout = <T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> =>
+    Promise.race([promise, new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms))]);
+
+  // Phase 1: Fetch inventory + floors + prices in parallel
   const [nfts, floors, prices] = await Promise.all([
-    getWalletNFTs(wallet),
-    getCollectionFloors(),
+    timeout(getWalletNFTs(wallet), 10_000, []),
+    timeout(getCollectionFloors(), 10_000, new Map()),
     getTokenPrices(),
   ]);
 
-  // Detect purchase prices (mutates nfts in place)
-  await detectPurchasePrices(wallet, nfts);
+  // Phase 2: Detect purchase prices (best-effort, 5s timeout)
+  await timeout(detectPurchasePrices(wallet, nfts), 5_000, undefined);
 
   // Group by category
   const categoryMap = new Map<string, NFTItem[]>();
