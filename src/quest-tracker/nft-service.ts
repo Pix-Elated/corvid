@@ -276,6 +276,62 @@ const GAME_VAULTS = [
   '0x7959c306cce2f25d4553b2c786a852d0801a3638',
 ];
 
+// ─── Metadata Enrichment ────────────────────────────────────────────────────
+
+const BLOCKSCOUT_BASE = 'https://explorer.immutable.com/api/v2';
+
+/**
+ * Enrich NFTs that have empty attributes by fetching metadata from Blockscout.
+ * Batches requests per collection, up to 20 per collection to stay within limits.
+ */
+async function enrichMetadata(nfts: NFTItem[]): Promise<void> {
+  const needsEnrichment = nfts.filter((n) => Object.keys(n.attributes).length === 0);
+  if (needsEnrichment.length === 0) return;
+
+  // Group by contract, limit per collection to avoid rate limits
+  const byContract = new Map<string, NFTItem[]>();
+  for (const nft of needsEnrichment) {
+    const list = byContract.get(nft.contractAddress) || [];
+    list.push(nft);
+    byContract.set(nft.contractAddress, list);
+  }
+
+  await Promise.all(
+    [...byContract.entries()].map(async ([contractAddr, items]) => {
+      // Limit to 20 per collection to avoid hammering the API
+      const batch = items.slice(0, 20);
+      for (const nft of batch) {
+        try {
+          const url = `${BLOCKSCOUT_BASE}/tokens/${contractAddr}/instances/${nft.tokenId}`;
+          const data = await fetchJson<{
+            metadata?: {
+              name?: string;
+              image?: string;
+              attributes?: Array<{ trait_type?: string; value?: string }>;
+            };
+          }>(url, {});
+
+          if (data.metadata?.name && nft.name.includes('#')) {
+            nft.name = data.metadata.name;
+          }
+          if (data.metadata?.image) {
+            nft.image = data.metadata.image;
+          }
+          if (data.metadata?.attributes) {
+            for (const attr of data.metadata.attributes) {
+              if (attr.trait_type && attr.value) {
+                nft.attributes[attr.trait_type] = String(attr.value);
+              }
+            }
+          }
+        } catch {
+          // Non-critical — name parsing fallback will handle it
+        }
+      }
+    })
+  );
+}
+
 /**
  * Detect purchase prices from sale activity history.
  */
@@ -449,12 +505,15 @@ export async function getPortfolio(wallet: string): Promise<Portfolio> {
   ]);
 
   // Phase 2: Add deposited NFTs (must run after inventory to deduplicate)
-  // Small delay to let rate limit window reset after phase 1
   const nfts = [...onChainNfts];
   await new Promise((r) => setTimeout(r, 500));
   await timeout(addDepositedNFTs(wallet, nfts), 12_000, undefined);
 
-  // Phase 3: Detect purchase prices (best-effort)
+  // Phase 3: Enrich metadata from Blockscout for NFTs with empty attributes
+  await new Promise((r) => setTimeout(r, 300));
+  await timeout(enrichMetadata(nfts), 10_000, undefined);
+
+  // Phase 4: Detect purchase prices (best-effort)
   await timeout(detectPurchasePrices(wallet, nfts), 8_000, undefined);
 
   // Group by category
