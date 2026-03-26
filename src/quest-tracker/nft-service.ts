@@ -214,7 +214,7 @@ export async function getWalletNFTs(wallet: string): Promise<NFTItem[]> {
 // ─── Purchase Price Detection ───────────────────────────────────────────────
 
 /**
- * Find NFTs the wallet deposited in-game and add them to the list.
+ * Find NFTs the wallet deposited to vault and add them to the list.
  * Queries the wallet's own transfer history (fast — only their transfers).
  */
 async function addDepositedNFTs(wallet: string, nfts: NFTItem[]): Promise<void> {
@@ -242,7 +242,7 @@ async function addDepositedNFTs(wallet: string, nfts: NFTItem[]): Promise<void> 
           const from = (d.from || '').toLowerCase();
           const to = (d.to || '').toLowerCase();
 
-          // Wallet sent to vault = deposited in-game
+          // Wallet sent to vault = deposited to vault
           if (from === wallet.toLowerCase() && vaultAddrs.has(to)) {
             const tokenId = d.asset.token_id;
             // Skip if already in the list
@@ -275,6 +275,59 @@ const GAME_VAULTS = [
   '0xe597f8370e99fe87de34e0c0fa863920cb39ca02',
   '0x7959c306cce2f25d4553b2c786a852d0801a3638',
 ];
+
+// ─── Metadata Enrichment ────────────────────────────────────────────────────
+
+const BLOCKSCOUT_BASE = 'https://explorer.immutable.com/api/v2';
+
+/**
+ * Enrich NFTs that have empty attributes by fetching metadata from Blockscout.
+ * Batches requests per collection, up to 20 per collection to stay within limits.
+ */
+async function enrichMetadata(nfts: NFTItem[]): Promise<void> {
+  const needsEnrichment = nfts.filter((n) => Object.keys(n.attributes).length === 0);
+  if (needsEnrichment.length === 0) return;
+
+  const byContract = new Map<string, NFTItem[]>();
+  for (const nft of needsEnrichment) {
+    const list = byContract.get(nft.contractAddress) || [];
+    list.push(nft);
+    byContract.set(nft.contractAddress, list);
+  }
+
+  await Promise.all(
+    [...byContract.entries()].map(async ([contractAddr, items]) => {
+      for (const nft of items) {
+        try {
+          const url = `${BLOCKSCOUT_BASE}/tokens/${contractAddr}/instances/${nft.tokenId}`;
+          const data = await fetchJson<{
+            metadata?: {
+              name?: string;
+              image?: string;
+              attributes?: Array<{ trait_type?: string; value?: string }>;
+            };
+          }>(url, {});
+
+          if (data.metadata?.name && nft.name.includes('#')) {
+            nft.name = data.metadata.name;
+          }
+          if (data.metadata?.image) {
+            nft.image = data.metadata.image;
+          }
+          if (data.metadata?.attributes) {
+            for (const attr of data.metadata.attributes) {
+              if (attr.trait_type && attr.value) {
+                nft.attributes[attr.trait_type] = String(attr.value);
+              }
+            }
+          }
+        } catch {
+          // Non-critical — name parsing fallback will handle it
+        }
+      }
+    })
+  );
+}
 
 /**
  * Detect purchase prices from sale activity history.
@@ -441,19 +494,24 @@ export async function getPortfolio(wallet: string): Promise<Portfolio> {
   const timeout = <T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> =>
     Promise.race([promise, new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms))]);
 
-  // Phase 1: Fetch inventory + floors + prices in parallel
-  const [nfts, floors, prices] = await Promise.all([
+  // Phase 1: Fetch on-chain inventory + floors + prices in parallel
+  const [onChainNfts, floors, prices] = await Promise.all([
     timeout(getWalletNFTs(wallet), 10_000, []),
     timeout(getCollectionFloors(), 10_000, new Map()),
     getTokenPrices(),
   ]);
 
-  // Phase 2: Detect deposited NFTs + purchase prices in parallel (best-effort)
-  await timeout(
-    Promise.all([addDepositedNFTs(wallet, nfts), detectPurchasePrices(wallet, nfts)]),
-    8_000,
-    undefined
-  );
+  // Phase 2: Add deposited NFTs (must run after inventory to deduplicate)
+  const nfts = [...onChainNfts];
+  await new Promise((r) => setTimeout(r, 500));
+  await timeout(addDepositedNFTs(wallet, nfts), 12_000, undefined);
+
+  // Phase 3: Enrich metadata from Blockscout for NFTs with empty attributes
+  await new Promise((r) => setTimeout(r, 300));
+  await timeout(enrichMetadata(nfts), 10_000, undefined);
+
+  // Phase 4: Detect purchase prices (best-effort)
+  await timeout(detectPurchasePrices(wallet, nfts), 8_000, undefined);
 
   // Group by category
   const categoryMap = new Map<string, NFTItem[]>();
@@ -629,7 +687,7 @@ async function getDepositedCounts(contractAddr: string): Promise<Map<string, num
 }
 
 /**
- * Get the top NFT holders, including deposited-in-game NFTs.
+ * Get the top NFT holders, including vault-deposited NFTs.
  * @param limit Max results
  * @param category Filter to a single category. Omit for all.
  */
@@ -672,8 +730,8 @@ export async function getNFTWhales(limit = 15, category?: string): Promise<NFTWh
         for (const [depositor, count] of depositCounts) {
           const existing = walletTotals.get(depositor) || { total: 0, breakdown: {} };
           existing.total += count;
-          existing.breakdown[`${collection.name} (in-game)`] =
-            (existing.breakdown[`${collection.name} (in-game)`] || 0) + count;
+          existing.breakdown[`${collection.name} (deposited)`] =
+            (existing.breakdown[`${collection.name} (deposited)`] || 0) + count;
           walletTotals.set(depositor, existing);
         }
       } catch (error) {
