@@ -355,11 +355,13 @@ export async function detectPurchasePrices(wallet: string, nfts: NFTItem[]): Pro
             details?: {
               to?: string;
               payment?: {
-                token?: { contract_address?: string };
+                token?: { contract_address?: string; symbol?: string };
                 price_excluding_fees?: string;
                 price_including_fees?: string;
               };
-              asset?: { token_id?: string; contract_address?: string };
+              asset?:
+                | Array<{ token_id?: string; contract_address?: string }>
+                | { token_id?: string; contract_address?: string };
             };
           }>;
         }>(url);
@@ -368,30 +370,46 @@ export async function detectPurchasePrices(wallet: string, nfts: NFTItem[]): Pro
           const d = act.details;
           if (!d || d.to?.toLowerCase() !== wallet.toLowerCase()) continue;
 
-          const tokenId = d.asset?.token_id;
+          // Asset can be an array or object depending on API version
+          const assetObj = Array.isArray(d.asset) ? d.asset[0] : d.asset;
+          const tokenId = assetObj?.token_id;
           if (!tokenId) continue;
 
           const nft = contractNfts.find((n) => n.tokenId === tokenId);
-          if (!nft || nft.purchasePriceImx !== null) continue; // Already has price
+          if (!nft || nft.purchasePriceImx !== null) continue;
 
-          const rawPrice =
-            d.payment?.price_including_fees || d.payment?.price_excluding_fees || '0';
+          const rawPrice = d.payment?.price_excluding_fees || d.payment?.price_including_fees;
+          if (!rawPrice) continue;
+
+          const priceRaw = parseFloat(rawPrice);
           const paymentAddr = d.payment?.token?.contract_address?.toLowerCase() || '';
           const tokenInfo = ERC20_MAP[paymentAddr];
 
-          if (!tokenInfo) continue;
+          // Fallback: guess decimals from magnitude if token not in map
+          let symbol: string;
+          let decimals: number;
+          if (tokenInfo) {
+            symbol = tokenInfo.symbol;
+            decimals = tokenInfo.decimals;
+          } else if (priceRaw > 1e12) {
+            symbol = (d.payment?.token?.symbol || 'IMX').toUpperCase();
+            decimals = 18;
+          } else {
+            symbol = 'USDC';
+            decimals = 6;
+          }
 
-          const amount = parseFloat(rawPrice) / Math.pow(10, tokenInfo.decimals);
+          const amount = priceRaw / Math.pow(10, decimals);
 
-          if (tokenInfo.symbol === 'IMX') {
+          if (symbol === 'IMX') {
             nft.purchasePriceImx = amount;
             nft.purchasePriceUsd = amount * prices.imx;
             nft.purchaseCurrency = 'IMX';
-          } else if (tokenInfo.symbol === 'USDC') {
+          } else if (symbol === 'USDC') {
             nft.purchasePriceUsd = amount;
             nft.purchasePriceImx = prices.imx > 0 ? amount / prices.imx : null;
             nft.purchaseCurrency = 'USDC';
-          } else if (tokenInfo.symbol === 'QUEST') {
+          } else if (symbol === 'QUEST') {
             nft.purchasePriceUsd = amount * prices.quest;
             nft.purchasePriceImx = prices.imx > 0 ? (amount * prices.quest) / prices.imx : null;
             nft.purchaseCurrency = 'QUEST';
