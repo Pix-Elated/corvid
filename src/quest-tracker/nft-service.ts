@@ -2,6 +2,7 @@
  * NFT portfolio lookup for RavenQuest collections on Immutable zkEVM.
  * Streamlined version of ravenquest-companion's portfolio-service for Discord.
  */
+import * as knownAddresses from './known-addresses';
 
 const CHAIN = 'imtbl-zkevm-mainnet';
 const IMX_BASE = 'https://api.immutable.com/v1/chains';
@@ -570,16 +571,18 @@ export interface NFTWhale {
 }
 
 /**
- * Get the top NFT holders across all RQ collections.
- * Queries each collection's holders from Blockscout, merges by wallet.
+ * Get the top NFT holders, optionally filtered to a specific collection.
+ * @param limit Max results
+ * @param category Filter to a single category (e.g. 'land', 'cards'). Omit for all.
  */
-export async function getNFTWhales(limit = 15): Promise<NFTWhale[]> {
-  const { isKnownAddress } = await import('./known-addresses');
-
-  // Tally NFTs per wallet across all collections
+export async function getNFTWhales(limit = 15, category?: string): Promise<NFTWhale[]> {
   const walletTotals = new Map<string, { total: number; breakdown: Record<string, number> }>();
 
-  for (const [contractAddr, collection] of Object.entries(RQ_COLLECTIONS)) {
+  const collections = Object.entries(RQ_COLLECTIONS).filter(
+    ([, col]) => !category || col.category === category
+  );
+
+  for (const [contractAddr, collection] of collections) {
     try {
       const url = `https://explorer.immutable.com/api/v2/tokens/${contractAddr}/holders`;
       const data = await fetchJson<{
@@ -591,7 +594,7 @@ export async function getNFTWhales(limit = 15): Promise<NFTWhale[]> {
 
       for (const holder of data.items || []) {
         const addr = holder.address.hash.toLowerCase();
-        if (isKnownAddress(addr)) continue; // Skip ecosystem wallets
+        if (knownAddresses.isKnownAddress(addr)) continue;
 
         const count = parseInt(holder.value, 10);
         if (isNaN(count) || count <= 0) continue;

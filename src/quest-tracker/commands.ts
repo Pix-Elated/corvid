@@ -454,7 +454,23 @@ export const nftCommand = {
         )
     )
     .addSubcommand((sub) =>
-      sub.setName('whales').setDescription('Top 15 RavenQuest NFT holders across all collections')
+      sub
+        .setName('whales')
+        .setDescription('Top 15 RavenQuest NFT holders')
+        .addStringOption((opt) =>
+          opt
+            .setName('collection')
+            .setDescription('Filter to a specific collection (default: all)')
+            .setRequired(false)
+            .addChoices(
+              { name: 'All Collections', value: 'all' },
+              { name: 'Land', value: 'land' },
+              { name: 'Munks', value: 'munks' },
+              { name: 'Moas', value: 'moas' },
+              { name: 'RavenCards', value: 'cards' },
+              { name: 'Cosmetics', value: 'cosmetics' }
+            )
+        )
     ),
 
   async execute(interaction: ChatInputCommandInteraction): Promise<void> {
@@ -507,14 +523,21 @@ async function handleNftPortfolio(interaction: ChatInputCommandInteraction): Pro
 }
 
 async function handleNftWhales(interaction: ChatInputCommandInteraction): Promise<void> {
+  const collection = interaction.options.getString('collection') || 'all';
   await interaction.deferReply();
 
-  const whales = await nftService.getNFTWhales(15);
+  const category = collection === 'all' ? undefined : collection;
+  const whales = await nftService.getNFTWhales(15, category);
 
   if (whales.length === 0) {
     await interaction.editReply({ content: 'No NFT holder data available.' });
     return;
   }
 
-  await interaction.editReply({ embeds: [embeds.nftWhalesEmbed(whales)] });
+  // Pass collection name to embed for the title
+  const collectionName = category
+    ? Object.values(nftService.RQ_COLLECTIONS).find((c) => c.category === category)?.name ||
+      category
+    : undefined;
+  await interaction.editReply({ embeds: [embeds.nftWhalesEmbed(whales, collectionName)] });
 }

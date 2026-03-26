@@ -397,7 +397,7 @@ export function portfolioEmbed(portfolio: Portfolio): EmbedBuilder {
 /**
  * Build the NFT whale leaderboard embed.
  */
-export function nftWhalesEmbed(whales: NFTWhale[]): EmbedBuilder {
+export function nftWhalesEmbed(whales: NFTWhale[], collectionName?: string): EmbedBuilder {
   const lines = whales.map((w, i) => {
     const rank = `\`${String(i + 1).padStart(2)}\``;
     const addr = `[${shortAddr(w.wallet)}](${EXPLORER_BASE}/address/${w.wallet})`;
@@ -409,7 +409,7 @@ export function nftWhalesEmbed(whales: NFTWhale[]): EmbedBuilder {
   });
 
   return new EmbedBuilder()
-    .setTitle('🐋 Top RavenQuest NFT Holders')
+    .setTitle(`🐋 Top ${collectionName || 'RavenQuest NFT'} Holders`)
     .setColor(QUEST_COLOR)
     .setDescription(lines.join('\n'))
     .setFooter({ text: 'Excludes ecosystem wallets (vaults, pools, burn)' })
