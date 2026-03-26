@@ -23,6 +23,7 @@ import {
 import { scanCommand } from '../commands/scan';
 import { worldmapBanCommand } from '../commands/worldmap-ban';
 import { postOrUpdateBanList, startBanListRefresh } from '../../hall-of-shame';
+import { questCommand, setupQuestTrackingCommand, startPolling } from '../../quest-tracker';
 
 /**
  * Handle the ready event - bot is connected and ready
@@ -60,6 +61,9 @@ export async function handleReady(client: Client): Promise<void> {
   } catch (error) {
     console.error('[Ready] Failed to set up ban list card:', error);
   }
+
+  // Start QUEST tracker hourly polling
+  startPolling(client);
 }
 
 /**
@@ -85,6 +89,8 @@ async function registerCommands(client: Client): Promise<void> {
     clearWarningsCommand.data.toJSON(),
     scanCommand.data.toJSON(),
     worldmapBanCommand.data.toJSON(),
+    questCommand.data.toJSON(),
+    setupQuestTrackingCommand.data.toJSON(),
   ];
 
   const rest = new REST({ version: '10' }).setToken(config.discordBotToken);

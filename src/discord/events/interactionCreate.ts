@@ -28,6 +28,7 @@ import {
 } from '../commands/moderation';
 import { scanCommand } from '../commands/scan';
 import { worldmapBanCommand } from '../commands/worldmap-ban';
+import { questCommand, setupQuestTrackingCommand } from '../../quest-tracker';
 import {
   handleTicketButton,
   handleTicketModal,
@@ -398,6 +399,12 @@ export async function handleInteractionCreate(interaction: Interaction): Promise
         break;
       case 'worldmap-ban':
         await worldmapBanCommand.execute(interaction);
+        break;
+      case 'quest':
+        await questCommand.execute(interaction);
+        break;
+      case 'setup-quest-tracking':
+        await setupQuestTrackingCommand.execute(interaction);
         break;
       default:
         console.warn(`[InteractionCreate] Unknown command: ${commandName}`);
