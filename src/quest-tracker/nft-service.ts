@@ -99,6 +99,8 @@ export interface CollectionFloor {
   floorImx: number | null;
   floorUsd: number | null;
   listings: number;
+  /** Per-subcategory floors (e.g. "Small" → 100 IMX, "Large" → 5000 IMX) */
+  subFloors: Record<string, number>;
 }
 
 export interface PortfolioCategory {
@@ -426,6 +428,8 @@ export async function detectPurchasePrices(wallet: string, nfts: NFTItem[]): Pro
 
 /**
  * Get collection floor prices using the Immutable Orderbook.
+ * Fetches listings with metadata to build per-subcategory floors
+ * (e.g. Small Land floor vs Large Land floor).
  */
 export async function getCollectionFloors(): Promise<Map<string, CollectionFloor>> {
   const floors = new Map<string, CollectionFloor>();
@@ -434,15 +438,17 @@ export async function getCollectionFloors(): Promise<Map<string, CollectionFloor
   await Promise.all(
     Object.entries(RQ_COLLECTIONS).map(async ([contractAddr, collection]) => {
       try {
+        // Fetch more listings to get subcategory diversity
         const params = new URLSearchParams({
           sell_item_contract_address: contractAddr,
           status: 'ACTIVE',
-          page_size: '10',
+          page_size: '200',
         });
 
         const url = `${IMX_BASE}/${CHAIN}/orders/listings?${params}`;
         const data = await fetchJson<{
           result: Array<{
+            sell: Array<{ token_id?: string; contract_address?: string }>;
             buy: Array<{
               item_type?: string;
               contract_address?: string;
@@ -454,10 +460,14 @@ export async function getCollectionFloors(): Promise<Map<string, CollectionFloor
         let floorImx: number | null = null;
         let listingCount = 0;
 
+        // Parse all listings with their prices
+        const listingsWithPrice: Array<{ tokenId: string; imxAmount: number }> = [];
+
         for (const order of data.result || []) {
           listingCount++;
           const buyItem = order.buy?.[0];
-          if (!buyItem?.amount) continue;
+          const sellItem = order.sell?.[0];
+          if (!buyItem?.amount || !sellItem?.token_id) continue;
 
           const tokenAddr = buyItem.contract_address?.toLowerCase() || '';
           const tokenInfo = ERC20_MAP[tokenAddr];
@@ -477,6 +487,53 @@ export async function getCollectionFloors(): Promise<Map<string, CollectionFloor
           if (floorImx === null || imxAmount < floorImx) {
             floorImx = imxAmount;
           }
+          listingsWithPrice.push({ tokenId: sellItem.token_id, imxAmount });
+        }
+
+        // Fetch metadata for listed tokens to build subcategory floors
+        const subFloors: Record<string, number> = {};
+        // Take up to 50 cheapest listings to enrich
+        const cheapest = listingsWithPrice.sort((a, b) => a.imxAmount - b.imxAmount).slice(0, 50);
+
+        for (const listing of cheapest) {
+          try {
+            const metaUrl = `${BLOCKSCOUT_BASE}/tokens/${contractAddr}/instances/${listing.tokenId}`;
+            const meta = await fetchJson<{
+              metadata?: {
+                name?: string;
+                attributes?: Array<{ trait_type?: string; value?: string }>;
+              };
+            }>(metaUrl, {});
+
+            let subKey = '';
+            const attrs = meta.metadata?.attributes || [];
+            const attrMap: Record<string, string> = {};
+            for (const a of attrs) {
+              if (a.trait_type && a.value) attrMap[a.trait_type] = a.value;
+            }
+
+            switch (collection.category) {
+              case 'land':
+                subKey = parseLandSize(
+                  attrMap['Tier'] || attrMap['Size'] || meta.metadata?.name || ''
+                );
+                break;
+              case 'munks':
+              case 'cards':
+              case 'cosmetics':
+                subKey = attrMap['Rarity'] || '';
+                break;
+              case 'moas':
+                subKey = attrMap['Tier'] ? `Tier ${attrMap['Tier']}` : '';
+                break;
+            }
+
+            if (subKey && (!(subKey in subFloors) || listing.imxAmount < subFloors[subKey])) {
+              subFloors[subKey] = listing.imxAmount;
+            }
+          } catch {
+            // Skip metadata fetch failures
+          }
         }
 
         floors.set(contractAddr, {
@@ -485,6 +542,7 @@ export async function getCollectionFloors(): Promise<Map<string, CollectionFloor
           floorImx,
           floorUsd: floorImx !== null ? floorImx * prices.imx : null,
           listings: listingCount,
+          subFloors,
         });
       } catch (error) {
         console.error(`[NFTService] Failed to get floor for ${collection.name}:`, error);
@@ -494,6 +552,7 @@ export async function getCollectionFloors(): Promise<Map<string, CollectionFloor
           floorImx: null,
           floorUsd: null,
           listings: 0,
+          subFloors: {},
         });
       }
     })
@@ -566,9 +625,15 @@ export async function getPortfolio(wallet: string): Promise<Portfolio> {
       }
     }
 
-    // Value = count × floor price
-    const catValueImx = floor?.floorImx ? items.length * floor.floorImx : 0;
-    const catValueUsd = floor?.floorUsd ? items.length * floor.floorUsd : 0;
+    // Value = per-item subcategory floor when available, else collection floor
+    let catValueImx = 0;
+    for (const item of items) {
+      const subKey = getItemSubKey(collection.category, item);
+      const subFloor = subKey && floor?.subFloors[subKey];
+      const itemFloor = subFloor || floor?.floorImx || 0;
+      catValueImx += itemFloor;
+    }
+    const catValueUsd = catValueImx * prices.imx;
 
     totalValueImx += catValueImx;
     totalValueUsd += catValueUsd;
@@ -606,6 +671,31 @@ export async function getPortfolio(wallet: string): Promise<Portfolio> {
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
+
+/** Get the subcategory key for an NFT (matches the keys in subFloors) */
+function getItemSubKey(category: string, item: NFTItem): string {
+  switch (category) {
+    case 'land':
+      return parseLandSize(item.attributes['Tier'] || item.attributes['Size'] || item.name || '');
+    case 'munks':
+    case 'cards':
+    case 'cosmetics':
+      return item.attributes['Rarity'] || '';
+    case 'moas':
+      return item.attributes['Tier'] ? `Tier ${item.attributes['Tier']}` : '';
+    default:
+      return '';
+  }
+}
+
+/** Extract land size from Tier attribute or name (e.g. "Large Estate" → "Large") */
+function parseLandSize(raw: string): string {
+  const sizes = ['Small', 'Medium', 'Large', 'Stronghold', 'Fort'];
+  for (const s of sizes) {
+    if (raw.toLowerCase().includes(s.toLowerCase())) return s;
+  }
+  return raw;
+}
 
 function extractAttributes(nft: RawNFT): Record<string, string> {
   const attrs: Record<string, string> = {};
