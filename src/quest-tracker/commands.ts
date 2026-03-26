@@ -20,6 +20,7 @@ import {
   EmbedBuilder,
 } from 'discord.js';
 import * as imx from './imx-service';
+import * as nftService from './nft-service';
 import * as embeds from './embeds';
 import * as state from './state';
 
@@ -433,3 +434,87 @@ export const setupQuestTrackingCommand = {
     });
   },
 };
+
+// ─── NFT Commands ───────────────────────────────────────────────────────────
+
+/**
+ * /nft portfolio <address> — Wallet's RavenQuest NFT portfolio
+ * /nft whales              — Top 15 NFT holders across all collections
+ */
+export const nftCommand = {
+  data: new SlashCommandBuilder()
+    .setName('nft')
+    .setDescription('RavenQuest NFT lookup')
+    .addSubcommand((sub) =>
+      sub
+        .setName('portfolio')
+        .setDescription("Look up a wallet's RavenQuest NFT portfolio")
+        .addStringOption((opt) =>
+          opt.setName('address').setDescription('Wallet address (0x...)').setRequired(true)
+        )
+    )
+    .addSubcommand((sub) =>
+      sub.setName('whales').setDescription('Top 15 RavenQuest NFT holders across all collections')
+    ),
+
+  async execute(interaction: ChatInputCommandInteraction): Promise<void> {
+    const sub = interaction.options.getSubcommand();
+
+    try {
+      switch (sub) {
+        case 'portfolio':
+          return await handleNftPortfolio(interaction);
+        case 'whales':
+          return await handleNftWhales(interaction);
+        default:
+          await interaction.reply({ content: 'Unknown subcommand.', ephemeral: true });
+      }
+    } catch (error) {
+      console.error(`[QuestTracker] Error in /nft ${sub}:`, error);
+      const msg = error instanceof Error ? error.message : 'Unknown error';
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply({ content: `Error: ${msg}` });
+      } else {
+        await interaction.reply({ content: `Error: ${msg}`, ephemeral: true });
+      }
+    }
+  },
+};
+
+async function handleNftPortfolio(interaction: ChatInputCommandInteraction): Promise<void> {
+  const address = interaction.options.getString('address', true).trim();
+
+  if (!/^0x[a-fA-F0-9]{40}$/i.test(address)) {
+    await interaction.reply({
+      content: 'Invalid wallet address. Must be 0x followed by 40 hex characters.',
+      ephemeral: true,
+    });
+    return;
+  }
+
+  await interaction.deferReply();
+
+  const portfolio = await nftService.getPortfolio(address);
+
+  if (portfolio.totalNFTs === 0) {
+    await interaction.editReply({
+      content: `No RavenQuest NFTs found for \`${imx.shortAddr(address)}\`.`,
+    });
+    return;
+  }
+
+  await interaction.editReply({ embeds: [embeds.portfolioEmbed(portfolio)] });
+}
+
+async function handleNftWhales(interaction: ChatInputCommandInteraction): Promise<void> {
+  await interaction.deferReply();
+
+  const whales = await nftService.getNFTWhales(15);
+
+  if (whales.length === 0) {
+    await interaction.editReply({ content: 'No NFT holder data available.' });
+    return;
+  }
+
+  await interaction.editReply({ embeds: [embeds.nftWhalesEmbed(whales)] });
+}

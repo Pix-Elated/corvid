@@ -235,3 +235,194 @@ export function statusEmbed(title: string, description: string, success = true):
     .setColor(success ? SUCCESS_COLOR : WHALE_COLOR)
     .setTimestamp();
 }
+
+// ─── NFT Portfolio Embeds ───────────────────────────────────────────────────
+
+import type { Portfolio, NFTItem, NFTWhale } from './nft-service';
+
+function fmtImx(n: number): string {
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
+  return n.toFixed(1);
+}
+
+function fmtUsd(n: number): string {
+  if (n >= 1000) return `$${(n / 1000).toFixed(1)}K`;
+  return `$${n.toFixed(2)}`;
+}
+
+/**
+ * Group NFTs by subcategory (e.g. "Small Land", "Medium Land", "Legendary Munk")
+ * and return display lines. Only includes groups that have items.
+ */
+function buildSubcategoryLines(category: string, items: NFTItem[]): string[] {
+  const groups = new Map<string, { count: number; paidImx: number; knownCount: number }>();
+
+  for (const item of items) {
+    let subKey: string;
+
+    switch (category) {
+      case 'land': {
+        const size = item.attributes['Size'] || 'Unknown';
+        subKey = `${size} Land`;
+        break;
+      }
+      case 'munks': {
+        const rarity = item.attributes['Rarity'] || 'Unknown';
+        subKey = `${rarity} Munk`;
+        break;
+      }
+      case 'moas': {
+        const tier = item.attributes['Tier'];
+        subKey = tier ? `Tier ${tier} Moa` : 'Moa';
+        break;
+      }
+      case 'cards': {
+        const rarity = item.attributes['Rarity'] || 'Unknown';
+        subKey = `${rarity} RavenCard`;
+        break;
+      }
+      case 'cosmetics': {
+        const rarity = item.attributes['Rarity'] || '';
+        subKey = rarity ? `${rarity} Cosmetic` : 'Cosmetic';
+        break;
+      }
+      default:
+        subKey = item.name;
+    }
+
+    const existing = groups.get(subKey) || { count: 0, paidImx: 0, knownCount: 0 };
+    existing.count++;
+    if (item.purchasePriceImx !== null) {
+      existing.paidImx += item.purchasePriceImx;
+      existing.knownCount++;
+    }
+    groups.set(subKey, existing);
+  }
+
+  // Sort: land by size order, others alphabetically
+  const entries = [...groups.entries()];
+  if (category === 'land') {
+    const sizeOrder = ['Small', 'Medium', 'Large', 'Stronghold', 'Fort'];
+    entries.sort((a, b) => {
+      const aIdx = sizeOrder.findIndex((s) => a[0].startsWith(s));
+      const bIdx = sizeOrder.findIndex((s) => b[0].startsWith(s));
+      return (aIdx === -1 ? 99 : aIdx) - (bIdx === -1 ? 99 : bIdx);
+    });
+  } else if (category === 'moas') {
+    entries.sort((a, b) => {
+      const aNum = parseInt(a[0].match(/\d+/)?.[0] || '99');
+      const bNum = parseInt(b[0].match(/\d+/)?.[0] || '99');
+      return aNum - bNum;
+    });
+  } else {
+    const rarityOrder = ['Common', 'Uncommon', 'Grand', 'Rare', 'Arcane', 'Mythic', 'Legendary'];
+    entries.sort((a, b) => {
+      const aIdx = rarityOrder.findIndex((r) => a[0].startsWith(r));
+      const bIdx = rarityOrder.findIndex((r) => b[0].startsWith(r));
+      return (aIdx === -1 ? 99 : aIdx) - (bIdx === -1 ? 99 : bIdx);
+    });
+  }
+
+  return entries.map(([name, data]) => {
+    const paidStr = data.knownCount > 0 ? ` — paid **${fmtImx(data.paidImx)} IMX**` : '';
+    return `${data.count}× ${name}${paidStr}`;
+  });
+}
+
+/**
+ * Build the portfolio summary embed.
+ * Groups by subcategory, only shows what exists.
+ */
+export function portfolioEmbed(portfolio: Portfolio): EmbedBuilder {
+  const embed = new EmbedBuilder()
+    .setTitle(`🎒 NFT Portfolio — ${shortAddr(portfolio.wallet)}`)
+    .setURL(`${EXPLORER_BASE}/address/${portfolio.wallet}`)
+    .setColor(QUEST_COLOR);
+
+  // Build subcategory breakdown per collection (only if items exist)
+  for (const cat of portfolio.categories) {
+    const emoji = getCategoryEmoji(cat.category);
+    const lines = buildSubcategoryLines(cat.category, cat.items);
+    if (lines.length === 0) continue;
+
+    const floorStr =
+      cat.floor?.floorImx !== null && cat.floor?.floorImx !== undefined
+        ? ` · floor ${cat.floor.floorImx.toFixed(1)} IMX`
+        : '';
+
+    embed.addFields({
+      name: `${emoji} ${cat.name} (${cat.count})${floorStr}`,
+      value: lines.join('\n'),
+    });
+  }
+
+  // Totals
+  const totalPaidStr =
+    portfolio.priceKnownCount > 0
+      ? `**${fmtImx(portfolio.totalCostImx)} IMX** (~${fmtUsd(portfolio.totalCostUsd)})`
+      : 'Unknown';
+
+  const currentValueStr =
+    portfolio.totalValueImx > 0
+      ? `**${fmtImx(portfolio.totalValueImx)} IMX** (~${fmtUsd(portfolio.totalValueUsd)})`
+      : 'N/A';
+
+  embed.addFields(
+    { name: 'Total Paid', value: totalPaidStr, inline: true },
+    { name: 'Current Value', value: currentValueStr, inline: true }
+  );
+
+  // P&L if we have both cost and value
+  if (portfolio.priceKnownCount > 0 && portfolio.totalValueImx > 0) {
+    const pnlImx = portfolio.totalValueImx - portfolio.totalCostImx;
+    const pnlUsd = portfolio.totalValueUsd - portfolio.totalCostUsd;
+    const sign = pnlImx >= 0 ? '+' : '';
+    const icon = pnlImx >= 0 ? '🟢' : '🔴';
+    embed.addFields({
+      name: `${icon} P&L`,
+      value: `${sign}${fmtImx(pnlImx)} IMX (~${sign}${fmtUsd(pnlUsd)})`,
+      inline: true,
+    });
+  }
+
+  embed
+    .setFooter({
+      text: `IMX: $${portfolio.imxPrice.toFixed(2)} · ${portfolio.priceKnownCount}/${portfolio.totalNFTs} purchase prices known`,
+    })
+    .setTimestamp();
+
+  return embed;
+}
+
+/**
+ * Build the NFT whale leaderboard embed.
+ */
+export function nftWhalesEmbed(whales: NFTWhale[]): EmbedBuilder {
+  const lines = whales.map((w, i) => {
+    const rank = `\`${String(i + 1).padStart(2)}\``;
+    const addr = `[${shortAddr(w.wallet)}](${EXPLORER_BASE}/address/${w.wallet})`;
+    const parts = Object.entries(w.breakdown)
+      .filter(([, count]) => count > 0)
+      .map(([name, count]) => `${count} ${name}`)
+      .join(', ');
+    return `${rank} ${addr} — **${w.totalNFTs}** NFTs\n${' '.repeat(5)}${parts}`;
+  });
+
+  return new EmbedBuilder()
+    .setTitle('🐋 Top RavenQuest NFT Holders')
+    .setColor(QUEST_COLOR)
+    .setDescription(lines.join('\n'))
+    .setFooter({ text: 'Excludes ecosystem wallets (vaults, pools, burn)' })
+    .setTimestamp();
+}
+
+function getCategoryEmoji(category: string): string {
+  const map: Record<string, string> = {
+    land: '🏡',
+    munks: '🐵',
+    moas: '🦅',
+    cards: '🃏',
+    cosmetics: '👗',
+  };
+  return map[category] || '📦';
+}
