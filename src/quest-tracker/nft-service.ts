@@ -2,6 +2,7 @@
  * NFT portfolio lookup for RavenQuest collections on Immutable zkEVM.
  * Streamlined version of ravenquest-companion's portfolio-service for Discord.
  */
+import * as knownAddresses from './known-addresses';
 
 const CHAIN = 'imtbl-zkevm-mainnet';
 const IMX_BASE = 'https://api.immutable.com/v1/chains';
@@ -57,12 +58,29 @@ function getHeaders(): Record<string, string> {
 }
 
 async function fetchJson<T>(url: string, headers?: Record<string, string>): Promise<T> {
-  const res = await fetch(url, { headers: headers || getHeaders() });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
+  const maxRetries = 3;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const res = await fetch(url, { headers: headers || getHeaders() });
+
+    if (res.status === 429) {
+      const retryAfter = res.headers.get('retry-after');
+      const baseDelay = retryAfter ? parseInt(retryAfter, 10) * 1000 : 1000 * Math.pow(2, attempt);
+      const delay = baseDelay + Math.random() * 500;
+      console.warn(
+        `[NFTService] 429 rate limited, retrying in ${Math.round(delay)}ms (attempt ${attempt + 1}/${maxRetries})`
+      );
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      continue;
+    }
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
+    }
+
+    return res.json() as Promise<T>;
   }
-  return res.json() as Promise<T>;
+  throw new Error(`Rate limited after ${maxRetries} retries`);
 }
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -553,16 +571,18 @@ export interface NFTWhale {
 }
 
 /**
- * Get the top NFT holders across all RQ collections.
- * Queries each collection's holders from Blockscout, merges by wallet.
+ * Get the top NFT holders, optionally filtered to a specific collection.
+ * @param limit Max results
+ * @param category Filter to a single category (e.g. 'land', 'cards'). Omit for all.
  */
-export async function getNFTWhales(limit = 15): Promise<NFTWhale[]> {
-  const { isKnownAddress } = await import('./known-addresses');
-
-  // Tally NFTs per wallet across all collections
+export async function getNFTWhales(limit = 15, category?: string): Promise<NFTWhale[]> {
   const walletTotals = new Map<string, { total: number; breakdown: Record<string, number> }>();
 
-  for (const [contractAddr, collection] of Object.entries(RQ_COLLECTIONS)) {
+  const collections = Object.entries(RQ_COLLECTIONS).filter(
+    ([, col]) => !category || col.category === category
+  );
+
+  for (const [contractAddr, collection] of collections) {
     try {
       const url = `https://explorer.immutable.com/api/v2/tokens/${contractAddr}/holders`;
       const data = await fetchJson<{
@@ -574,7 +594,7 @@ export async function getNFTWhales(limit = 15): Promise<NFTWhale[]> {
 
       for (const holder of data.items || []) {
         const addr = holder.address.hash.toLowerCase();
-        if (isKnownAddress(addr)) continue; // Skip ecosystem wallets
+        if (knownAddresses.isKnownAddress(addr)) continue;
 
         const count = parseInt(holder.value, 10);
         if (isNaN(count) || count <= 0) continue;
