@@ -21,6 +21,7 @@ import { setBansDiscordClient } from './api/routes/bans';
 import { recordShutdown, sendStartupMessage } from './discord/startup';
 import { stopAutoClose } from './tickets/autoclose';
 import { stopBanListRefresh } from './hall-of-shame';
+import { loadTrackerState, stopPolling } from './quest-tracker';
 
 let client: Client | null = null;
 
@@ -49,6 +50,7 @@ async function main(): Promise<void> {
   loadServerState();
   loadReleaseState();
   loadAdoptedChannelsState();
+  loadTrackerState();
 
   // Create Discord client
   client = createClient();
@@ -147,6 +149,7 @@ async function shutdown(signal: string): Promise<void> {
 
   stopAutoClose();
   stopBanListRefresh();
+  stopPolling();
 
   if (client) {
     console.log('[Main] Destroying Discord client...');
