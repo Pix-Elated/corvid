@@ -413,7 +413,7 @@ export function nftWhalesEmbed(whales: NFTWhale[], collectionName?: string): Emb
     .setTitle(`🐋 Top ${collectionName || 'RavenQuest NFT'} Holders`)
     .setColor(QUEST_COLOR)
     .setDescription(lines.join('\n'))
-    .setFooter({ text: 'Includes in-game deposits • Excludes ecosystem wallets' })
+    .setFooter({ text: 'Includes vault deposits • Excludes ecosystem wallets' })
     .setTimestamp();
 }
 
