@@ -20,6 +20,7 @@ import {
   EmbedBuilder,
 } from 'discord.js';
 import * as imx from './imx-service';
+import * as nftService from './nft-service';
 import * as embeds from './embeds';
 import * as state from './state';
 
@@ -431,5 +432,79 @@ export const setupQuestTrackingCommand = {
         ),
       ],
     });
+  },
+};
+
+// ─── NFT Portfolio Command ──────────────────────────────────────────────────
+
+/**
+ * /nft <address> [category] — Look up a wallet's RavenQuest NFT portfolio.
+ */
+export const nftCommand = {
+  data: new SlashCommandBuilder()
+    .setName('nft')
+    .setDescription("Look up a wallet's RavenQuest NFT portfolio")
+    .addStringOption((opt) =>
+      opt.setName('address').setDescription('Wallet address (0x...)').setRequired(true)
+    )
+    .addStringOption((opt) =>
+      opt
+        .setName('category')
+        .setDescription('Show details for a specific collection')
+        .setRequired(false)
+        .addChoices(
+          { name: 'Land', value: 'land' },
+          { name: 'Munks', value: 'munks' },
+          { name: 'Moas', value: 'moas' },
+          { name: 'RavenCards', value: 'cards' },
+          { name: 'Cosmetics', value: 'cosmetics' }
+        )
+    ),
+
+  async execute(interaction: ChatInputCommandInteraction): Promise<void> {
+    const address = interaction.options.getString('address', true).trim();
+    const category = interaction.options.getString('category');
+
+    if (!/^0x[a-fA-F0-9]{40}$/i.test(address)) {
+      await interaction.reply({
+        content: 'Invalid wallet address. Must be 0x followed by 40 hex characters.',
+        ephemeral: true,
+      });
+      return;
+    }
+
+    await interaction.deferReply();
+
+    try {
+      const portfolio = await nftService.getPortfolio(address);
+
+      if (portfolio.totalNFTs === 0) {
+        await interaction.editReply({
+          content: `No RavenQuest NFTs found for \`${imx.shortAddr(address)}\`.`,
+        });
+        return;
+      }
+
+      if (category) {
+        // Show detailed view for one category
+        const cat = portfolio.categories.find((c) => c.category === category);
+        if (!cat) {
+          await interaction.editReply({
+            content: `No **${category}** NFTs found for this wallet.`,
+          });
+          return;
+        }
+        const embed = embeds.categoryDetailEmbed(cat, address, portfolio.imxPrice);
+        await interaction.editReply({ embeds: [embed] });
+      } else {
+        // Show portfolio summary
+        const embed = embeds.portfolioEmbed(portfolio);
+        await interaction.editReply({ embeds: [embed] });
+      }
+    } catch (error) {
+      console.error('[QuestTracker] Error in /nft:', error);
+      const msg = error instanceof Error ? error.message : 'Unknown error';
+      await interaction.editReply({ content: `Failed to fetch portfolio: ${msg}` });
+    }
   },
 };
