@@ -446,24 +446,10 @@ export const nftCommand = {
     .setDescription("Look up a wallet's RavenQuest NFT portfolio")
     .addStringOption((opt) =>
       opt.setName('address').setDescription('Wallet address (0x...)').setRequired(true)
-    )
-    .addStringOption((opt) =>
-      opt
-        .setName('category')
-        .setDescription('Show details for a specific collection')
-        .setRequired(false)
-        .addChoices(
-          { name: 'Land', value: 'land' },
-          { name: 'Munks', value: 'munks' },
-          { name: 'Moas', value: 'moas' },
-          { name: 'RavenCards', value: 'cards' },
-          { name: 'Cosmetics', value: 'cosmetics' }
-        )
     ),
 
   async execute(interaction: ChatInputCommandInteraction): Promise<void> {
     const address = interaction.options.getString('address', true).trim();
-    const category = interaction.options.getString('category');
 
     if (!/^0x[a-fA-F0-9]{40}$/i.test(address)) {
       await interaction.reply({
@@ -485,22 +471,8 @@ export const nftCommand = {
         return;
       }
 
-      if (category) {
-        // Show detailed view for one category
-        const cat = portfolio.categories.find((c) => c.category === category);
-        if (!cat) {
-          await interaction.editReply({
-            content: `No **${category}** NFTs found for this wallet.`,
-          });
-          return;
-        }
-        const embed = embeds.categoryDetailEmbed(cat, address, portfolio.imxPrice);
-        await interaction.editReply({ embeds: [embed] });
-      } else {
-        // Show portfolio summary
-        const embed = embeds.portfolioEmbed(portfolio);
-        await interaction.editReply({ embeds: [embed] });
-      }
+      const embed = embeds.portfolioEmbed(portfolio);
+      await interaction.editReply({ embeds: [embed] });
     } catch (error) {
       console.error('[QuestTracker] Error in /nft:', error);
       const msg = error instanceof Error ? error.message : 'Unknown error';
