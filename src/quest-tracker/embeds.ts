@@ -403,16 +403,17 @@ export function nftWhalesEmbed(whales: NFTWhale[], collectionName?: string): Emb
     const addr = `[${shortAddr(w.wallet)}](${EXPLORER_BASE}/address/${w.wallet})`;
     const parts = Object.entries(w.breakdown)
       .filter(([, count]) => count > 0)
+      .sort(([, a], [, b]) => b - a) // Largest counts first
       .map(([name, count]) => `${count} ${name}`)
       .join(', ');
-    return `${rank} ${addr} — **${w.totalNFTs}** NFTs\n${' '.repeat(5)}${parts}`;
+    return `${rank} ${addr} — **${w.totalNFTs}**\n${' '.repeat(5)}${parts}`;
   });
 
   return new EmbedBuilder()
     .setTitle(`🐋 Top ${collectionName || 'RavenQuest NFT'} Holders`)
     .setColor(QUEST_COLOR)
     .setDescription(lines.join('\n'))
-    .setFooter({ text: 'Excludes ecosystem wallets (vaults, pools, burn)' })
+    .setFooter({ text: 'Includes in-game deposits • Excludes ecosystem wallets' })
     .setTimestamp();
 }
 
