@@ -2,6 +2,7 @@
  * Immutable zkEVM API client for QUEST token tracking.
  * Uses the Blockchain Data API + Blockscout Explorer API.
  */
+import * as knownAddresses from './known-addresses';
 
 const CHAIN = 'imtbl-zkevm-mainnet';
 const QUEST_CONTRACT = '0x8a1e8cf52954c8d72907774d4b2b81f38dd1c5c4';
@@ -45,9 +46,11 @@ export function rawToQuest(rawAmount: string | number): number {
   return num / Math.pow(10, QUEST_DECIMALS);
 }
 
-/** Shorten a wallet address */
+/** Shorten a wallet address, using known label if available */
 export function shortAddr(addr: string): string {
   if (!addr || addr.length < 10) return addr || 'unknown';
+  const label = knownAddresses.getKnownLabel(addr);
+  if (label) return label;
   return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
 }
 
@@ -162,6 +165,7 @@ export async function getWalletTransfers(wallet: string, limit = 50): Promise<Qu
 
 /**
  * Fetch top QUEST token holders from Blockscout.
+ * Filters out known RQ ecosystem addresses (vaults, pools, burn).
  */
 export async function getHolders(limit = 20): Promise<QuestHolder[]> {
   const url = `${BLOCKSCOUT_BASE}/tokens/${QUEST_CONTRACT}/holders`;
@@ -182,17 +186,21 @@ export async function getHolders(limit = 20): Promise<QuestHolder[]> {
   const info = await getTokenInfo();
   const totalSupply = info.totalSupply;
 
-  return (data.items || []).slice(0, limit).map((item) => {
-    const balance = rawToQuest(item.value);
-    return {
-      address: item.address.hash,
-      balance,
-      rawBalance: item.value,
-      percentOfSupply: totalSupply > 0 ? (balance / totalSupply) * 100 : 0,
-      isContract: item.address.is_contract,
-      name: item.address.name || undefined,
-    };
-  });
+  // Filter out known ecosystem addresses, then take top N
+  return (data.items || [])
+    .filter((item) => !knownAddresses.isKnownAddress(item.address.hash))
+    .slice(0, limit)
+    .map((item) => {
+      const balance = rawToQuest(item.value);
+      return {
+        address: item.address.hash,
+        balance,
+        rawBalance: item.value,
+        percentOfSupply: totalSupply > 0 ? (balance / totalSupply) * 100 : 0,
+        isContract: item.address.is_contract,
+        name: item.address.name || undefined,
+      };
+    });
 }
 
 /**
@@ -244,12 +252,23 @@ export async function getWalletBalance(wallet: string): Promise<number> {
 
 /**
  * Identify large transfers (whale movements) above a threshold.
+ * Excludes internal ecosystem shuffling (known→known) but keeps
+ * transfers between known and private wallets.
  */
 export function filterWhaleTransfers(
   transfers: QuestTransfer[],
   thresholdQuest = 10_000
 ): QuestTransfer[] {
-  return transfers.filter((t) => t.amount >= thresholdQuest).sort((a, b) => b.amount - a.amount);
+  return transfers
+    .filter((t) => {
+      if (t.amount < thresholdQuest) return false;
+      // Skip internal ecosystem transfers (vault ↔ vault, pool ↔ treasury)
+      const fromKnown = knownAddresses.isKnownAddress(t.from);
+      const toKnown = knownAddresses.isKnownAddress(t.to);
+      if (fromKnown && toKnown) return false;
+      return true;
+    })
+    .sort((a, b) => b.amount - a.amount);
 }
 
 /**

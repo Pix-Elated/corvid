@@ -542,3 +542,60 @@ function extractAttributes(nft: RawNFT): Record<string, string> {
 
   return attrs;
 }
+
+// ─── NFT Whale Leaderboard ──────────────────────────────────────────────────
+
+export interface NFTWhale {
+  wallet: string;
+  totalNFTs: number;
+  /** Breakdown by category name → count */
+  breakdown: Record<string, number>;
+}
+
+/**
+ * Get the top NFT holders across all RQ collections.
+ * Queries each collection's holders from Blockscout, merges by wallet.
+ */
+export async function getNFTWhales(limit = 15): Promise<NFTWhale[]> {
+  const { isKnownAddress } = await import('./known-addresses');
+
+  // Tally NFTs per wallet across all collections
+  const walletTotals = new Map<string, { total: number; breakdown: Record<string, number> }>();
+
+  for (const [contractAddr, collection] of Object.entries(RQ_COLLECTIONS)) {
+    try {
+      const url = `https://explorer.immutable.com/api/v2/tokens/${contractAddr}/holders`;
+      const data = await fetchJson<{
+        items: Array<{
+          address: { hash: string };
+          value: string;
+        }>;
+      }>(url, {});
+
+      for (const holder of data.items || []) {
+        const addr = holder.address.hash.toLowerCase();
+        if (isKnownAddress(addr)) continue; // Skip ecosystem wallets
+
+        const count = parseInt(holder.value, 10);
+        if (isNaN(count) || count <= 0) continue;
+
+        const existing = walletTotals.get(addr) || { total: 0, breakdown: {} };
+        existing.total += count;
+        existing.breakdown[collection.name] = (existing.breakdown[collection.name] || 0) + count;
+        walletTotals.set(addr, existing);
+      }
+    } catch (error) {
+      console.error(`[NFTService] Failed to fetch holders for ${collection.name}:`, error);
+    }
+  }
+
+  // Sort by total NFTs desc, take top N
+  return [...walletTotals.entries()]
+    .sort((a, b) => b[1].total - a[1].total)
+    .slice(0, limit)
+    .map(([wallet, data]) => ({
+      wallet,
+      totalNFTs: data.total,
+      breakdown: data.breakdown,
+    }));
+}
