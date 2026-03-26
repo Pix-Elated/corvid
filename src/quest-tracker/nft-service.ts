@@ -174,13 +174,12 @@ export async function getWalletNFTs(wallet: string): Promise<NFTItem[]> {
       const items: NFTItem[] = [];
 
       try {
-        // Fetch NFTs in wallet (first page only — 200 is plenty per collection)
+        // Fetch NFTs owned by wallet (account-scoped endpoint)
         const params = new URLSearchParams({
-          account_address: wallet,
           contract_address: contractAddr,
           page_size: '200',
         });
-        const url = `${IMX_BASE}/${CHAIN}/nfts?${params}`;
+        const url = `${IMX_BASE}/${CHAIN}/accounts/${wallet}/nfts?${params}`;
         const data = await fetchJson<{
           result: RawNFT[];
           page?: { next_cursor?: string };
@@ -213,6 +212,69 @@ export async function getWalletNFTs(wallet: string): Promise<NFTItem[]> {
 }
 
 // ─── Purchase Price Detection ───────────────────────────────────────────────
+
+/**
+ * Find NFTs the wallet deposited in-game and add them to the list.
+ * Queries the wallet's own transfer history (fast — only their transfers).
+ */
+async function addDepositedNFTs(wallet: string, nfts: NFTItem[]): Promise<void> {
+  const vaultAddrs = new Set(GAME_VAULTS);
+
+  await Promise.all(
+    Object.entries(RQ_COLLECTIONS).map(async ([contractAddr, collection]) => {
+      try {
+        const params = new URLSearchParams({
+          account_address: wallet,
+          activity_type: 'transfer',
+          contract_address: contractAddr,
+          page_size: '200',
+        });
+        const url = `${IMX_BASE}/${CHAIN}/activities?${params}`;
+        const data = await fetchJson<{
+          result: Array<{
+            details?: { from?: string; to?: string; asset?: { token_id?: string } };
+          }>;
+        }>(url);
+
+        for (const act of data.result || []) {
+          const d = act.details;
+          if (!d || !d.asset?.token_id) continue;
+          const from = (d.from || '').toLowerCase();
+          const to = (d.to || '').toLowerCase();
+
+          // Wallet sent to vault = deposited in-game
+          if (from === wallet.toLowerCase() && vaultAddrs.has(to)) {
+            const tokenId = d.asset.token_id;
+            // Skip if already in the list
+            if (nfts.some((n) => n.contractAddress === contractAddr && n.tokenId === tokenId))
+              continue;
+
+            nfts.push({
+              tokenId,
+              name: `${collection.name} #${tokenId}`,
+              contractAddress: contractAddr,
+              category: collection.category,
+              image: null,
+              attributes: {},
+              depositState: 'deposited',
+              purchasePriceImx: null,
+              purchasePriceUsd: null,
+              purchaseCurrency: null,
+            });
+          }
+        }
+      } catch {
+        // Non-critical
+      }
+    })
+  );
+}
+
+/** Game custody vault addresses */
+const GAME_VAULTS = [
+  '0xe597f8370e99fe87de34e0c0fa863920cb39ca02',
+  '0x7959c306cce2f25d4553b2c786a852d0801a3638',
+];
 
 /**
  * Detect purchase prices from sale activity history.
@@ -305,11 +367,9 @@ export async function getCollectionFloors(): Promise<Map<string, CollectionFloor
           sell_item_contract_address: contractAddr,
           status: 'ACTIVE',
           page_size: '10',
-          sort_by: 'buy_item_amount',
-          sort_direction: 'asc',
         });
 
-        const url = `${IMX_BASE}/${CHAIN}/orders?${params}`;
+        const url = `${IMX_BASE}/${CHAIN}/orders/listings?${params}`;
         const data = await fetchJson<{
           result: Array<{
             buy: Array<{
@@ -388,8 +448,12 @@ export async function getPortfolio(wallet: string): Promise<Portfolio> {
     getTokenPrices(),
   ]);
 
-  // Phase 2: Detect purchase prices (best-effort, 5s timeout)
-  await timeout(detectPurchasePrices(wallet, nfts), 5_000, undefined);
+  // Phase 2: Detect deposited NFTs + purchase prices in parallel (best-effort)
+  await timeout(
+    Promise.all([addDepositedNFTs(wallet, nfts), detectPurchasePrices(wallet, nfts)]),
+    8_000,
+    undefined
+  );
 
   // Group by category
   const categoryMap = new Map<string, NFTItem[]>();
@@ -505,56 +569,62 @@ export interface NFTWhale {
   breakdown: Record<string, number>;
 }
 
-/** Game custody addresses whose NFTs should be credited back to depositors */
-const GAME_VAULTS = [
-  '0xe597f8370e99fe87de34e0c0fa863920cb39ca02', // ItemVault
-  '0x7959c306cce2f25d4553b2c786a852d0801a3638', // ItemDepositter
-];
+// GAME_VAULTS defined above (near addDepositedNFTs)
 
 /**
  * For a given contract, find who deposited NFTs into game vaults.
  * Returns map of original_wallet → count of NFTs currently deposited.
+ * Paginates through all activities (up to 2000) to catch older deposits.
  */
 async function getDepositedCounts(contractAddr: string): Promise<Map<string, number>> {
-  const depositorCounts = new Map<string, number>();
+  const tokenDepositor = new Map<string, string>();
 
   for (const vaultAddr of GAME_VAULTS) {
+    let cursor: string | null = null;
+    let pages = 0;
+    const maxPages = 10; // 10 × 200 = 2000 activities max
+
     try {
-      // Get transfers TO the vault for this contract
-      const params = new URLSearchParams({
-        account_address: vaultAddr,
-        activity_type: 'transfer',
-        contract_address: contractAddr,
-        page_size: '200',
-      });
-      const url = `${IMX_BASE}/${CHAIN}/activities?${params}`;
-      const data = await fetchJson<{
-        result: Array<{
-          details?: { from?: string; to?: string; asset?: { token_id?: string } };
-        }>;
-      }>(url);
+      do {
+        const params = new URLSearchParams({
+          account_address: vaultAddr,
+          activity_type: 'transfer',
+          contract_address: contractAddr,
+          page_size: '200',
+        });
+        if (cursor) params.set('page_cursor', cursor);
 
-      // Track per-token: last depositor wins (handles re-deposits)
-      const tokenDepositor = new Map<string, string>();
-      for (const act of data.result || []) {
-        const d = act.details;
-        if (!d || !d.asset?.token_id) continue;
-        const from = (d.from || '').toLowerCase();
-        const to = (d.to || '').toLowerCase();
-        if (to === vaultAddr && from && !knownAddresses.isKnownAddress(from)) {
-          tokenDepositor.set(d.asset.token_id, from);
+        const url = `${IMX_BASE}/${CHAIN}/activities?${params}`;
+        const data = await fetchJson<{
+          result: Array<{
+            details?: { from?: string; to?: string; asset?: { token_id?: string } };
+          }>;
+          page?: { next_cursor?: string };
+        }>(url);
+
+        for (const act of data.result || []) {
+          const d = act.details;
+          if (!d || !d.asset?.token_id) continue;
+          const from = (d.from || '').toLowerCase();
+          const to = (d.to || '').toLowerCase();
+          if (to === vaultAddr && from && !knownAddresses.isKnownAddress(from)) {
+            tokenDepositor.set(d.asset.token_id, from);
+          }
         }
-      }
 
-      // Count per depositor
-      for (const depositor of tokenDepositor.values()) {
-        depositorCounts.set(depositor, (depositorCounts.get(depositor) || 0) + 1);
-      }
+        cursor = data.page?.next_cursor || null;
+        pages++;
+      } while (cursor && pages < maxPages);
     } catch {
       // Non-critical
     }
   }
 
+  // Count per depositor
+  const depositorCounts = new Map<string, number>();
+  for (const depositor of tokenDepositor.values()) {
+    depositorCounts.set(depositor, (depositorCounts.get(depositor) || 0) + 1);
+  }
   return depositorCounts;
 }
 
