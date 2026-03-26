@@ -288,7 +288,6 @@ async function enrichMetadata(nfts: NFTItem[]): Promise<void> {
   const needsEnrichment = nfts.filter((n) => Object.keys(n.attributes).length === 0);
   if (needsEnrichment.length === 0) return;
 
-  // Group by contract, limit per collection to avoid rate limits
   const byContract = new Map<string, NFTItem[]>();
   for (const nft of needsEnrichment) {
     const list = byContract.get(nft.contractAddress) || [];
@@ -298,9 +297,7 @@ async function enrichMetadata(nfts: NFTItem[]): Promise<void> {
 
   await Promise.all(
     [...byContract.entries()].map(async ([contractAddr, items]) => {
-      // Limit to 20 per collection to avoid hammering the API
-      const batch = items.slice(0, 20);
-      for (const nft of batch) {
+      for (const nft of items) {
         try {
           const url = `${BLOCKSCOUT_BASE}/tokens/${contractAddr}/instances/${nft.tokenId}`;
           const data = await fetchJson<{
