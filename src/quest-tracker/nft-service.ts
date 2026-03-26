@@ -501,14 +501,67 @@ function extractAttributes(nft: RawNFT): Record<string, string> {
 export interface NFTWhale {
   wallet: string;
   totalNFTs: number;
-  /** Breakdown by category name → count */
+  /** Breakdown by collection or subcategory → count */
   breakdown: Record<string, number>;
 }
 
+/** Game custody addresses whose NFTs should be credited back to depositors */
+const GAME_VAULTS = [
+  '0xe597f8370e99fe87de34e0c0fa863920cb39ca02', // ItemVault
+  '0x7959c306cce2f25d4553b2c786a852d0801a3638', // ItemDepositter
+];
+
 /**
- * Get the top NFT holders, optionally filtered to a specific collection.
+ * For a given contract, find who deposited NFTs into game vaults.
+ * Returns map of original_wallet → count of NFTs currently deposited.
+ */
+async function getDepositedCounts(contractAddr: string): Promise<Map<string, number>> {
+  const depositorCounts = new Map<string, number>();
+
+  for (const vaultAddr of GAME_VAULTS) {
+    try {
+      // Get transfers TO the vault for this contract
+      const params = new URLSearchParams({
+        account_address: vaultAddr,
+        activity_type: 'transfer',
+        contract_address: contractAddr,
+        page_size: '200',
+      });
+      const url = `${IMX_BASE}/${CHAIN}/activities?${params}`;
+      const data = await fetchJson<{
+        result: Array<{
+          details?: { from?: string; to?: string; asset?: { token_id?: string } };
+        }>;
+      }>(url);
+
+      // Track per-token: last depositor wins (handles re-deposits)
+      const tokenDepositor = new Map<string, string>();
+      for (const act of data.result || []) {
+        const d = act.details;
+        if (!d || !d.asset?.token_id) continue;
+        const from = (d.from || '').toLowerCase();
+        const to = (d.to || '').toLowerCase();
+        if (to === vaultAddr && from && !knownAddresses.isKnownAddress(from)) {
+          tokenDepositor.set(d.asset.token_id, from);
+        }
+      }
+
+      // Count per depositor
+      for (const depositor of tokenDepositor.values()) {
+        depositorCounts.set(depositor, (depositorCounts.get(depositor) || 0) + 1);
+      }
+    } catch {
+      // Non-critical
+    }
+  }
+
+  return depositorCounts;
+}
+
+/**
+ * Get the top NFT holders, including deposited-in-game NFTs.
  * @param limit Max results
- * @param category Filter to a single category (e.g. 'land', 'cards'). Omit for all.
+ * @param category Filter to a single category. Omit for all.
  */
 export async function getNFTWhales(limit = 15, category?: string): Promise<NFTWhale[]> {
   const walletTotals = new Map<string, { total: number; breakdown: Record<string, number> }>();
@@ -517,34 +570,48 @@ export async function getNFTWhales(limit = 15, category?: string): Promise<NFTWh
     ([, col]) => !category || col.category === category
   );
 
-  for (const [contractAddr, collection] of collections) {
-    try {
-      const url = `https://explorer.immutable.com/api/v2/tokens/${contractAddr}/holders`;
-      const data = await fetchJson<{
-        items: Array<{
-          address: { hash: string };
-          value: string;
-        }>;
-      }>(url, {});
+  // Fetch on-chain holders + deposit credits in parallel per collection
+  await Promise.all(
+    collections.map(async ([contractAddr, collection]) => {
+      try {
+        // On-chain holders (Blockscout)
+        const holdersPromise = fetchJson<{
+          items: Array<{ address: { hash: string }; value: string }>;
+        }>(`https://explorer.immutable.com/api/v2/tokens/${contractAddr}/holders`, {});
 
-      for (const holder of data.items || []) {
-        const addr = holder.address.hash.toLowerCase();
-        if (knownAddresses.isKnownAddress(addr)) continue;
+        // Deposited NFT credits
+        const depositsPromise = getDepositedCounts(contractAddr);
 
-        const count = parseInt(holder.value, 10);
-        if (isNaN(count) || count <= 0) continue;
+        const [holdersData, depositCounts] = await Promise.all([holdersPromise, depositsPromise]);
 
-        const existing = walletTotals.get(addr) || { total: 0, breakdown: {} };
-        existing.total += count;
-        existing.breakdown[collection.name] = (existing.breakdown[collection.name] || 0) + count;
-        walletTotals.set(addr, existing);
+        // Add on-chain holders (skip known ecosystem addresses)
+        for (const holder of holdersData.items || []) {
+          const addr = holder.address.hash.toLowerCase();
+          if (knownAddresses.isKnownAddress(addr)) continue;
+
+          const count = parseInt(holder.value, 10);
+          if (isNaN(count) || count <= 0) continue;
+
+          const existing = walletTotals.get(addr) || { total: 0, breakdown: {} };
+          existing.total += count;
+          existing.breakdown[collection.name] = (existing.breakdown[collection.name] || 0) + count;
+          walletTotals.set(addr, existing);
+        }
+
+        // Add deposited NFT credits back to original owners
+        for (const [depositor, count] of depositCounts) {
+          const existing = walletTotals.get(depositor) || { total: 0, breakdown: {} };
+          existing.total += count;
+          existing.breakdown[`${collection.name} (in-game)`] =
+            (existing.breakdown[`${collection.name} (in-game)`] || 0) + count;
+          walletTotals.set(depositor, existing);
+        }
+      } catch (error) {
+        console.error(`[NFTService] Failed to fetch holders for ${collection.name}:`, error);
       }
-    } catch (error) {
-      console.error(`[NFTService] Failed to fetch holders for ${collection.name}:`, error);
-    }
-  }
+    })
+  );
 
-  // Sort by total NFTs desc, take top N
   return [...walletTotals.entries()]
     .sort((a, b) => b[1].total - a[1].total)
     .slice(0, limit)
