@@ -238,7 +238,7 @@ export function statusEmbed(title: string, description: string, success = true):
 
 // ─── NFT Portfolio Embeds ───────────────────────────────────────────────────
 
-import type { Portfolio, NFTItem } from './nft-service';
+import type { Portfolio, NFTItem, NFTWhale } from './nft-service';
 
 function fmtImx(n: number): string {
   if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
@@ -392,6 +392,28 @@ export function portfolioEmbed(portfolio: Portfolio): EmbedBuilder {
     .setTimestamp();
 
   return embed;
+}
+
+/**
+ * Build the NFT whale leaderboard embed.
+ */
+export function nftWhalesEmbed(whales: NFTWhale[]): EmbedBuilder {
+  const lines = whales.map((w, i) => {
+    const rank = `\`${String(i + 1).padStart(2)}\``;
+    const addr = `[${shortAddr(w.wallet)}](${EXPLORER_BASE}/address/${w.wallet})`;
+    const parts = Object.entries(w.breakdown)
+      .filter(([, count]) => count > 0)
+      .map(([name, count]) => `${count} ${name}`)
+      .join(', ');
+    return `${rank} ${addr} — **${w.totalNFTs}** NFTs\n${' '.repeat(5)}${parts}`;
+  });
+
+  return new EmbedBuilder()
+    .setTitle('🐋 Top RavenQuest NFT Holders')
+    .setColor(QUEST_COLOR)
+    .setDescription(lines.join('\n'))
+    .setFooter({ text: 'Excludes ecosystem wallets (vaults, pools, burn)' })
+    .setTimestamp();
 }
 
 function getCategoryEmoji(category: string): string {
