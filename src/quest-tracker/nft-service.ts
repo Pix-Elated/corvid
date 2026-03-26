@@ -649,18 +649,44 @@ export interface NFTWhale {
 
 /**
  * For a given contract, find who deposited NFTs into game vaults.
- * Returns map of original_wallet → count of NFTs currently deposited.
- * Paginates through all activities (up to 2000) to catch older deposits.
+ * Gets the vault's NFT inventory, then traces each token's transfer
+ * history to find the original depositor. More accurate than scanning
+ * vault activities (which hit pagination limits).
  */
 async function getDepositedCounts(contractAddr: string): Promise<Map<string, number>> {
-  const tokenDepositor = new Map<string, string>();
+  const depositorCounts = new Map<string, number>();
 
   for (const vaultAddr of GAME_VAULTS) {
-    let cursor: string | null = null;
-    let pages = 0;
-    const maxPages = 10; // 10 × 200 = 2000 activities max
-
     try {
+      // Step 1: Get all NFTs the vault currently holds for this contract
+      const vaultTokens: string[] = [];
+      let cursor: string | null = null;
+      do {
+        const params = new URLSearchParams({
+          contract_address: contractAddr,
+          page_size: '200',
+        });
+        if (cursor) params.set('page_cursor', cursor);
+
+        const url = `${IMX_BASE}/${CHAIN}/accounts/${vaultAddr}/nfts?${params}`;
+        const data = await fetchJson<{
+          result: Array<{ token_id: string }>;
+          page?: { next_cursor?: string };
+        }>(url);
+
+        for (const nft of data.result || []) {
+          vaultTokens.push(nft.token_id);
+        }
+        cursor = data.page?.next_cursor || null;
+      } while (cursor);
+
+      if (vaultTokens.length === 0) continue;
+
+      // Step 2: Query vault's transfer activities to map token → depositor
+      // The vault received these tokens from the depositors
+      const tokenDepositor = new Map<string, string>();
+      cursor = null;
+      let pages = 0;
       do {
         const params = new URLSearchParams({
           account_address: vaultAddr,
@@ -683,24 +709,31 @@ async function getDepositedCounts(contractAddr: string): Promise<Map<string, num
           if (!d || !d.asset?.token_id) continue;
           const from = (d.from || '').toLowerCase();
           const to = (d.to || '').toLowerCase();
-          if (to === vaultAddr && from && !knownAddresses.isKnownAddress(from)) {
+          // Only count tokens the vault currently holds
+          if (
+            to === vaultAddr &&
+            from &&
+            !knownAddresses.isKnownAddress(from) &&
+            vaultTokens.includes(d.asset.token_id)
+          ) {
             tokenDepositor.set(d.asset.token_id, from);
           }
         }
 
         cursor = data.page?.next_cursor || null;
         pages++;
-      } while (cursor && pages < maxPages);
+        // Stop early if we've mapped all tokens
+        if (tokenDepositor.size >= vaultTokens.length) break;
+      } while (cursor && pages < 50); // Up to 10K activities
+
+      for (const depositor of tokenDepositor.values()) {
+        depositorCounts.set(depositor, (depositorCounts.get(depositor) || 0) + 1);
+      }
     } catch {
       // Non-critical
     }
   }
 
-  // Count per depositor
-  const depositorCounts = new Map<string, number>();
-  for (const depositor of tokenDepositor.values()) {
-    depositorCounts.set(depositor, (depositorCounts.get(depositor) || 0) + 1);
-  }
   return depositorCounts;
 }
 
