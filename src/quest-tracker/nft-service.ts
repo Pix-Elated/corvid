@@ -441,19 +441,21 @@ export async function getPortfolio(wallet: string): Promise<Portfolio> {
   const timeout = <T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> =>
     Promise.race([promise, new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms))]);
 
-  // Phase 1: Fetch inventory + floors + prices in parallel
-  const [nfts, floors, prices] = await Promise.all([
+  // Phase 1: Fetch on-chain inventory + floors + prices in parallel
+  const [onChainNfts, floors, prices] = await Promise.all([
     timeout(getWalletNFTs(wallet), 10_000, []),
     timeout(getCollectionFloors(), 10_000, new Map()),
     getTokenPrices(),
   ]);
 
-  // Phase 2: Detect deposited NFTs + purchase prices in parallel (best-effort)
-  await timeout(
-    Promise.all([addDepositedNFTs(wallet, nfts), detectPurchasePrices(wallet, nfts)]),
-    8_000,
-    undefined
-  );
+  // Phase 2: Add deposited NFTs (must run after inventory to deduplicate)
+  // Small delay to let rate limit window reset after phase 1
+  const nfts = [...onChainNfts];
+  await new Promise((r) => setTimeout(r, 500));
+  await timeout(addDepositedNFTs(wallet, nfts), 12_000, undefined);
+
+  // Phase 3: Detect purchase prices (best-effort)
+  await timeout(detectPurchasePrices(wallet, nfts), 8_000, undefined);
 
   // Group by category
   const categoryMap = new Map<string, NFTItem[]>();

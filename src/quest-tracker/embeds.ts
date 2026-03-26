@@ -250,6 +250,30 @@ function fmtUsd(n: number): string {
   return `$${n.toFixed(2)}`;
 }
 
+/** Parse land size from NFT name (e.g. "Small Estate" → "Small") */
+function parseSizeFromName(name: string): string | null {
+  const sizes = ['Small', 'Medium', 'Large', 'Stronghold', 'Fort'];
+  for (const s of sizes) {
+    if (name.toLowerCase().includes(s.toLowerCase())) return s;
+  }
+  return null;
+}
+
+/** Parse rarity from NFT name */
+function parseRarityFromName(name: string): string | null {
+  const rarities = ['Common', 'Uncommon', 'Grand', 'Rare', 'Arcane', 'Mythic', 'Legendary'];
+  for (const r of rarities) {
+    if (name.toLowerCase().includes(r.toLowerCase())) return r;
+  }
+  return null;
+}
+
+/** Parse tier number from NFT name (e.g. "Tier 3 Moa" → "3") */
+function parseTierFromName(name: string): string | null {
+  const match = name.match(/tier\s*(\d+)/i);
+  return match ? match[1] : null;
+}
+
 /**
  * Group NFTs by subcategory (e.g. "Small Land", "Medium Land", "Legendary Munk")
  * and return display lines. Only includes groups that have items.
@@ -262,27 +286,32 @@ function buildSubcategoryLines(category: string, items: NFTItem[]): string[] {
 
     switch (category) {
       case 'land': {
-        const size = item.attributes['Size'] || 'Unknown';
+        // Parse size from attributes OR from name (e.g. "Medium Estate", "Large Estate")
+        const size =
+          item.attributes['Size'] ||
+          item.attributes['Tier'] ||
+          parseSizeFromName(item.name) ||
+          'Unknown';
         subKey = `${size} Land`;
         break;
       }
       case 'munks': {
-        const rarity = item.attributes['Rarity'] || 'Unknown';
+        const rarity = item.attributes['Rarity'] || parseRarityFromName(item.name) || 'Unknown';
         subKey = `${rarity} Munk`;
         break;
       }
       case 'moas': {
-        const tier = item.attributes['Tier'];
+        const tier = item.attributes['Tier'] || parseTierFromName(item.name);
         subKey = tier ? `Tier ${tier} Moa` : 'Moa';
         break;
       }
       case 'cards': {
-        const rarity = item.attributes['Rarity'] || 'Unknown';
+        const rarity = item.attributes['Rarity'] || parseRarityFromName(item.name) || 'RavenCard';
         subKey = `${rarity} RavenCard`;
         break;
       }
       case 'cosmetics': {
-        const rarity = item.attributes['Rarity'] || '';
+        const rarity = item.attributes['Rarity'] || parseRarityFromName(item.name) || '';
         subKey = rarity ? `${rarity} Cosmetic` : 'Cosmetic';
         break;
       }
