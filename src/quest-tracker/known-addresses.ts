@@ -44,13 +44,6 @@ export const KNOWN_ADDRESSES: KnownAddress[] = [
     type: 'treasury',
   },
 
-  // Unverified contract — large holder, likely RQ-controlled
-  {
-    address: '0xd448104af227270317e1814b076afbab583b4f87',
-    label: 'RQ Contract',
-    type: 'treasury',
-  },
-
   // Liquidity pools — DEX, not a "holder"
   {
     address: '0xbe2930d274f862542740dcdc95257b3163172343',
