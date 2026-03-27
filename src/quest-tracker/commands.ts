@@ -498,11 +498,21 @@ export const nftCommand = {
 };
 
 async function handleNftPortfolio(interaction: ChatInputCommandInteraction): Promise<void> {
+  const { isKnownAddress, getKnownLabel } = await import('./known-addresses');
   const address = interaction.options.getString('address', true).trim();
 
   if (!/^0x[a-fA-F0-9]{40}$/i.test(address)) {
     await interaction.reply({
       content: 'Invalid wallet address. Must be 0x followed by 40 hex characters.',
+      ephemeral: true,
+    });
+    return;
+  }
+
+  if (isKnownAddress(address)) {
+    const label = getKnownLabel(address) || 'ecosystem wallet';
+    await interaction.reply({
+      content: `That's **${label}** — not a player wallet. Try a personal address instead.`,
       ephemeral: true,
     });
     return;
