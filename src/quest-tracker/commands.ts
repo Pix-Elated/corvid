@@ -520,7 +520,25 @@ async function handleNftPortfolio(interaction: ChatInputCommandInteraction): Pro
 
   await interaction.deferReply();
 
-  const portfolio = await nftService.getPortfolio(address);
+  const portfolio = await nftService.getPortfolio(address, async (phase, partial) => {
+    // Progressive update — show what we have so far
+    if (partial.totalNFTs > 0) {
+      try {
+        const embed = embeds.portfolioEmbed(partial);
+        const phaseLabels: Record<string, string> = {
+          inventory: 'Loading deposits...',
+          deposits: 'Enriching metadata...',
+          metadata: 'Detecting purchase prices...',
+          prices: 'Fetching floor prices...',
+        };
+        const status = phaseLabels[phase] || '';
+        if (status) embed.setFooter({ text: `${status} · IMX: $${partial.imxPrice.toFixed(2)}` });
+        await interaction.editReply({ embeds: [embed] });
+      } catch {
+        // Ignore update failures
+      }
+    }
+  });
 
   if (portfolio.totalNFTs === 0) {
     await interaction.editReply({
