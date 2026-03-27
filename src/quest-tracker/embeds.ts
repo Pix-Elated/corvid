@@ -278,7 +278,11 @@ function parseTierFromName(name: string): string | null {
  * Group NFTs by subcategory (e.g. "Small Land", "Medium Land", "Legendary Munk")
  * and return display lines. Only includes groups that have items.
  */
-function buildSubcategoryLines(category: string, items: NFTItem[]): string[] {
+function buildSubcategoryLines(
+  category: string,
+  items: NFTItem[],
+  subFloors?: Record<string, number>
+): string[] {
   const groups = new Map<string, { count: number; paidImx: number; knownCount: number }>();
 
   for (const item of items) {
@@ -350,8 +354,12 @@ function buildSubcategoryLines(category: string, items: NFTItem[]): string[] {
   }
 
   return entries.map(([name, data]) => {
+    // Extract the subcategory key for floor lookup (e.g. "Small" from "Small Land")
+    const subKey = name.replace(/ Land$| Munk$| Moa$| RavenCard$| Cosmetic$/, '');
+    const floor = subFloors?.[subKey];
+    const floorStr = floor ? ` (F$${fmtImx(floor)})` : '';
     const paidStr = data.knownCount > 0 ? ` — paid **${fmtImx(data.paidImx)} IMX**` : '';
-    return `${data.count}× ${name}${paidStr}`;
+    return `${data.count}× ${name}${floorStr}${paidStr}`;
   });
 }
 
@@ -368,7 +376,7 @@ export function portfolioEmbed(portfolio: Portfolio): EmbedBuilder {
   // Build subcategory breakdown per collection (only if items exist)
   for (const cat of portfolio.categories) {
     const emoji = getCategoryEmoji(cat.category);
-    const lines = buildSubcategoryLines(cat.category, cat.items);
+    const lines = buildSubcategoryLines(cat.category, cat.items, cat.floor?.subFloors);
     if (lines.length === 0) continue;
 
     const floorStr =
