@@ -357,7 +357,7 @@ function buildSubcategoryLines(
     // Extract the subcategory key for floor lookup (e.g. "Small" from "Small Land")
     const subKey = name.replace(/ Land$| Munk$| Moa$| RavenCard$| Cosmetic$/, '');
     const floor = subFloors?.[subKey];
-    const floorStr = floor ? ` (F$${fmtImx(floor)})` : '';
+    const floorStr = floor ? ` (F${fmtImx(floor)})` : '';
     const paidStr = data.knownCount > 0 ? ` — paid **${fmtImx(data.paidImx)} IMX**` : '';
     return `${data.count}× ${name}${floorStr}${paidStr}`;
   });
