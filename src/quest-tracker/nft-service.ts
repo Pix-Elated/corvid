@@ -565,9 +565,19 @@ export async function enrichSubFloors(floors: Map<string, CollectionFloor>): Pro
         if (imxAmount > 0) listings.push({ tokenId: sellItem.token_id, imxAmount });
       }
 
-      // Enrich cheapest 15 with Blockscout metadata
-      const sorted = listings.sort((a, b) => a.imxAmount - b.imxAmount).slice(0, 15);
-      for (const listing of sorted) {
+      // Sample across the full price range to catch all subcategories
+      // (cheapest 15 are often all the same type, e.g. all Small Land)
+      const sorted = listings.sort((a, b) => a.imxAmount - b.imxAmount);
+      const indices = new Set<number>();
+      // First 5 cheapest
+      for (let i = 0; i < Math.min(5, sorted.length); i++) indices.add(i);
+      // Sample every ~5% of the range to catch all subcategories
+      for (let pct = 0.05; pct <= 1.0; pct += 0.05) {
+        indices.add(Math.min(Math.floor(pct * sorted.length), sorted.length - 1));
+      }
+      const sampled = [...indices].sort((a, b) => a - b).map((i) => sorted[i]);
+
+      for (const listing of sampled) {
         try {
           const metaUrl = `${BLOCKSCOUT_BASE}/tokens/${contractAddr}/instances/${listing.tokenId}`;
           const meta = await fetchJson<{
