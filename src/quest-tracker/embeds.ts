@@ -369,8 +369,9 @@ function buildSubcategoryLines(
  */
 export function portfolioEmbed(portfolio: Portfolio): EmbedBuilder {
   const embed = new EmbedBuilder()
-    .setTitle(`🎒 NFT Portfolio — ${shortAddr(portfolio.wallet)}`)
+    .setTitle('🎒 NFT Portfolio')
     .setURL(`${EXPLORER_BASE}/address/${portfolio.wallet}`)
+    .setDescription(`\`${portfolio.wallet}\``)
     .setColor(QUEST_COLOR);
 
   // Build subcategory breakdown per collection (only if items exist)
