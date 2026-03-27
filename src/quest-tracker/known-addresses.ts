@@ -63,6 +63,13 @@ export const KNOWN_ADDRESSES: KnownAddress[] = [
     type: 'liquidity',
   },
 
+  // DEX swap router
+  {
+    address: '0xd67cc11151dbcccc424a16f8963ece3d0539bd61',
+    label: 'ImmutableSwapProxy (DEX)',
+    type: 'liquidity',
+  },
+
   // Burn address
   {
     address: '0x000000000000000000000000000000000000dead',
