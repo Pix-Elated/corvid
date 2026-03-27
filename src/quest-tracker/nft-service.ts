@@ -490,51 +490,7 @@ export async function getCollectionFloors(): Promise<Map<string, CollectionFloor
           listingsWithPrice.push({ tokenId: sellItem.token_id, imxAmount });
         }
 
-        // Fetch metadata for listed tokens to build subcategory floors
         const subFloors: Record<string, number> = {};
-        // Take up to 50 cheapest listings to enrich
-        const cheapest = listingsWithPrice.sort((a, b) => a.imxAmount - b.imxAmount).slice(0, 50);
-
-        for (const listing of cheapest) {
-          try {
-            const metaUrl = `${BLOCKSCOUT_BASE}/tokens/${contractAddr}/instances/${listing.tokenId}`;
-            const meta = await fetchJson<{
-              metadata?: {
-                name?: string;
-                attributes?: Array<{ trait_type?: string; value?: string }>;
-              };
-            }>(metaUrl, {});
-
-            let subKey = '';
-            const attrs = meta.metadata?.attributes || [];
-            const attrMap: Record<string, string> = {};
-            for (const a of attrs) {
-              if (a.trait_type && a.value) attrMap[a.trait_type] = a.value;
-            }
-
-            switch (collection.category) {
-              case 'land':
-                subKey = parseLandSize(
-                  attrMap['Tier'] || attrMap['Size'] || meta.metadata?.name || ''
-                );
-                break;
-              case 'munks':
-              case 'cards':
-              case 'cosmetics':
-                subKey = attrMap['Rarity'] || '';
-                break;
-              case 'moas':
-                subKey = attrMap['Tier'] ? `Tier ${attrMap['Tier']}` : '';
-                break;
-            }
-
-            if (subKey && (!(subKey in subFloors) || listing.imxAmount < subFloors[subKey])) {
-              subFloors[subKey] = listing.imxAmount;
-            }
-          } catch {
-            // Skip metadata fetch failures
-          }
-        }
 
         floors.set(contractAddr, {
           contractAddress: contractAddr,
@@ -561,113 +517,221 @@ export async function getCollectionFloors(): Promise<Map<string, CollectionFloor
   return floors;
 }
 
+/**
+ * Enrich floor data with per-subcategory prices.
+ * Fetches metadata for cheap listings from Blockscout — slow but accurate.
+ * Called as a separate phase so basic floors are available immediately.
+ */
+export async function enrichSubFloors(floors: Map<string, CollectionFloor>): Promise<void> {
+  const prices = await getTokenPrices();
+
+  for (const [contractAddr, floor] of floors) {
+    if (floor.listings === 0) continue;
+    const collection = RQ_COLLECTIONS[contractAddr];
+    if (!collection) continue;
+
+    try {
+      // Re-fetch cheapest listings for this collection
+      const params = new URLSearchParams({
+        sell_item_contract_address: contractAddr,
+        status: 'ACTIVE',
+        page_size: '30',
+      });
+      const url = `${IMX_BASE}/${CHAIN}/orders/listings?${params}`;
+      const data = await fetchJson<{
+        result: Array<{
+          sell: Array<{ token_id?: string }>;
+          buy: Array<{ contract_address?: string; amount?: string }>;
+        }>;
+      }>(url);
+
+      const listings: Array<{ tokenId: string; imxAmount: number }> = [];
+      for (const order of data.result || []) {
+        const sellItem = order.sell?.[0];
+        const buyItem = order.buy?.[0];
+        if (!sellItem?.token_id || !buyItem?.amount) continue;
+
+        const tokenAddr = buyItem.contract_address?.toLowerCase() || '';
+        const tokenInfo = ERC20_MAP[tokenAddr];
+        if (!tokenInfo) continue;
+
+        const amount = parseFloat(buyItem.amount) / Math.pow(10, tokenInfo.decimals);
+        const imxAmount =
+          tokenInfo.symbol === 'IMX'
+            ? amount
+            : tokenInfo.symbol === 'USDC' && prices.imx > 0
+              ? amount / prices.imx
+              : 0;
+        if (imxAmount > 0) listings.push({ tokenId: sellItem.token_id, imxAmount });
+      }
+
+      // Enrich cheapest 15 with Blockscout metadata
+      const sorted = listings.sort((a, b) => a.imxAmount - b.imxAmount).slice(0, 15);
+      for (const listing of sorted) {
+        try {
+          const metaUrl = `${BLOCKSCOUT_BASE}/tokens/${contractAddr}/instances/${listing.tokenId}`;
+          const meta = await fetchJson<{
+            metadata?: {
+              name?: string;
+              attributes?: Array<{ trait_type?: string; value?: string }>;
+            };
+          }>(metaUrl, {});
+
+          const attrMap: Record<string, string> = {};
+          for (const a of meta.metadata?.attributes || []) {
+            if (a.trait_type && a.value) attrMap[a.trait_type] = a.value;
+          }
+
+          let subKey = '';
+          switch (collection.category) {
+            case 'land':
+              subKey = parseLandSize(
+                attrMap['Tier'] || attrMap['Size'] || meta.metadata?.name || ''
+              );
+              break;
+            case 'munks':
+            case 'cards':
+            case 'cosmetics':
+              subKey = attrMap['Rarity'] || '';
+              break;
+            case 'moas':
+              subKey = attrMap['Tier'] ? `Tier ${attrMap['Tier']}` : '';
+              break;
+          }
+
+          if (
+            subKey &&
+            (!(subKey in floor.subFloors) || listing.imxAmount < floor.subFloors[subKey])
+          ) {
+            floor.subFloors[subKey] = listing.imxAmount;
+          }
+        } catch {
+          // Skip individual metadata failures
+        }
+      }
+    } catch {
+      // Skip collection failures
+    }
+  }
+}
+
 // ─── Full Portfolio ─────────────────────────────────────────────────────────
 
 /**
  * Build complete portfolio for a wallet address.
  * Timeout after 15s to avoid Discord interaction expiry.
  */
-export async function getPortfolio(wallet: string): Promise<Portfolio> {
-  const timeout = <T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> =>
-    Promise.race([promise, new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms))]);
-
-  // Phase 1: Fetch on-chain inventory + floors + prices in parallel
-  const [onChainNfts, floors, prices] = await Promise.all([
-    timeout(getWalletNFTs(wallet), 10_000, []),
-    timeout(getCollectionFloors(), 10_000, new Map()),
-    getTokenPrices(),
-  ]);
-
-  // Phase 2: Add deposited NFTs (must run after inventory to deduplicate)
-  const nfts = [...onChainNfts];
-  await new Promise((r) => setTimeout(r, 500));
-  await timeout(addDepositedNFTs(wallet, nfts), 12_000, undefined);
-
-  // Phase 3: Enrich metadata from Blockscout for NFTs with empty attributes
-  await new Promise((r) => setTimeout(r, 300));
-  await timeout(enrichMetadata(nfts), 10_000, undefined);
-
-  // Phase 4: Detect purchase prices (best-effort)
-  await timeout(detectPurchasePrices(wallet, nfts), 8_000, undefined);
-
-  // Group by category
-  const categoryMap = new Map<string, NFTItem[]>();
-  for (const nft of nfts) {
-    const list = categoryMap.get(nft.contractAddress) || [];
-    list.push(nft);
-    categoryMap.set(nft.contractAddress, list);
-  }
-
-  const categories: PortfolioCategory[] = [];
-  let totalValueImx = 0;
-  let totalValueUsd = 0;
-  let totalCostImx = 0;
-  let totalCostUsd = 0;
-  let totalPriceKnown = 0;
-
-  for (const [contractAddr, items] of categoryMap) {
-    const collection = RQ_COLLECTIONS[contractAddr];
-    if (!collection) continue;
-
-    const floor = floors.get(contractAddr) || null;
-
-    let catCostImx = 0;
-    let catCostUsd = 0;
-    let priceKnown = 0;
-
-    for (const item of items) {
-      if (item.purchasePriceImx !== null) {
-        catCostImx += item.purchasePriceImx;
-        priceKnown++;
-      }
-      if (item.purchasePriceUsd !== null) {
-        catCostUsd += item.purchasePriceUsd;
-      }
+export async function getPortfolio(
+  wallet: string,
+  onProgress?: (phase: string, portfolio: Portfolio) => void
+): Promise<Portfolio> {
+  const buildPortfolio = (
+    nfts: NFTItem[],
+    floors: Map<string, CollectionFloor>,
+    prices: { imx: number; usdc: number; quest: number }
+  ): Portfolio => {
+    const categoryMap = new Map<string, NFTItem[]>();
+    for (const nft of nfts) {
+      const list = categoryMap.get(nft.contractAddress) || [];
+      list.push(nft);
+      categoryMap.set(nft.contractAddress, list);
     }
 
-    // Value = per-item subcategory floor when available, else collection floor
-    let catValueImx = 0;
-    for (const item of items) {
-      const subKey = getItemSubKey(collection.category, item);
-      const subFloor = subKey && floor?.subFloors[subKey];
-      const itemFloor = subFloor || floor?.floorImx || 0;
-      catValueImx += itemFloor;
+    const categories: PortfolioCategory[] = [];
+    let totalValueImx = 0;
+    let totalValueUsd = 0;
+    let totalCostImx = 0;
+    let totalCostUsd = 0;
+    let totalPriceKnown = 0;
+
+    for (const [contractAddr, items] of categoryMap) {
+      const collection = RQ_COLLECTIONS[contractAddr];
+      if (!collection) continue;
+      const floor = floors.get(contractAddr) || null;
+
+      let catCostImx = 0;
+      let catCostUsd = 0;
+      let priceKnown = 0;
+      for (const item of items) {
+        if (item.purchasePriceImx !== null) {
+          catCostImx += item.purchasePriceImx;
+          priceKnown++;
+        }
+        if (item.purchasePriceUsd !== null) {
+          catCostUsd += item.purchasePriceUsd;
+        }
+      }
+
+      let catValueImx = 0;
+      for (const item of items) {
+        const subKey = getItemSubKey(collection.category, item);
+        const subFloor = subKey && floor?.subFloors[subKey];
+        const itemFloor = subFloor || floor?.floorImx || 0;
+        catValueImx += itemFloor;
+      }
+      const catValueUsd = catValueImx * prices.imx;
+
+      totalValueImx += catValueImx;
+      totalValueUsd += catValueUsd;
+      totalCostImx += catCostImx;
+      totalCostUsd += catCostUsd;
+      totalPriceKnown += priceKnown;
+
+      categories.push({
+        category: collection.category,
+        name: collection.name,
+        count: items.length,
+        items,
+        floor,
+        totalCostImx: catCostImx,
+        totalCostUsd: catCostUsd,
+        priceKnownCount: priceKnown,
+      });
     }
-    const catValueUsd = catValueImx * prices.imx;
 
-    totalValueImx += catValueImx;
-    totalValueUsd += catValueUsd;
-    totalCostImx += catCostImx;
-    totalCostUsd += catCostUsd;
-    totalPriceKnown += priceKnown;
+    const categoryOrder = ['land', 'munks', 'moas', 'cards', 'cosmetics'];
+    categories.sort(
+      (a, b) => categoryOrder.indexOf(a.category) - categoryOrder.indexOf(b.category)
+    );
 
-    categories.push({
-      category: collection.category,
-      name: collection.name,
-      count: items.length,
-      items,
-      floor,
-      totalCostImx: catCostImx,
-      totalCostUsd: catCostUsd,
-      priceKnownCount: priceKnown,
-    });
-  }
-
-  // Sort: Land first, then by count desc
-  const categoryOrder = ['land', 'munks', 'moas', 'cards', 'cosmetics'];
-  categories.sort((a, b) => categoryOrder.indexOf(a.category) - categoryOrder.indexOf(b.category));
-
-  return {
-    wallet,
-    totalNFTs: nfts.length,
-    categories,
-    totalValueImx,
-    totalValueUsd,
-    totalCostImx,
-    totalCostUsd,
-    priceKnownCount: totalPriceKnown,
-    imxPrice: prices.imx,
+    return {
+      wallet,
+      totalNFTs: nfts.length,
+      categories,
+      totalValueImx,
+      totalValueUsd,
+      totalCostImx,
+      totalCostUsd,
+      priceKnownCount: totalPriceKnown,
+      imxPrice: prices.imx,
+    };
   };
+
+  // Phase 1: Inventory + basic floors + prices (sequential to respect rate limits)
+  const prices = await getTokenPrices();
+  const [onChainNfts, floors] = await Promise.all([getWalletNFTs(wallet), getCollectionFloors()]);
+
+  const nfts = [...onChainNfts];
+
+  // Send initial update with on-chain NFTs + basic floors
+  if (onProgress) onProgress('inventory', buildPortfolio(nfts, floors, prices));
+
+  // Phase 2: Deposited NFTs
+  await addDepositedNFTs(wallet, nfts);
+  if (onProgress) onProgress('deposits', buildPortfolio(nfts, floors, prices));
+
+  // Phase 3: Enrich NFT metadata from Blockscout
+  await enrichMetadata(nfts);
+  if (onProgress) onProgress('metadata', buildPortfolio(nfts, floors, prices));
+
+  // Phase 4: Purchase prices
+  await detectPurchasePrices(wallet, nfts);
+  if (onProgress) onProgress('prices', buildPortfolio(nfts, floors, prices));
+
+  // Phase 5: Subcategory floor enrichment (slowest — many Blockscout calls)
+  await enrichSubFloors(floors);
+
+  return buildPortfolio(nfts, floors, prices);
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────

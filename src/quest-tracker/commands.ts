@@ -498,6 +498,7 @@ export const nftCommand = {
 };
 
 async function handleNftPortfolio(interaction: ChatInputCommandInteraction): Promise<void> {
+  const { isKnownAddress, getKnownLabel } = await import('./known-addresses');
   const address = interaction.options.getString('address', true).trim();
 
   if (!/^0x[a-fA-F0-9]{40}$/i.test(address)) {
@@ -508,9 +509,36 @@ async function handleNftPortfolio(interaction: ChatInputCommandInteraction): Pro
     return;
   }
 
+  if (isKnownAddress(address)) {
+    const label = getKnownLabel(address) || 'ecosystem wallet';
+    await interaction.reply({
+      content: `That's **${label}** — not a player wallet. Try a personal address instead.`,
+      ephemeral: true,
+    });
+    return;
+  }
+
   await interaction.deferReply();
 
-  const portfolio = await nftService.getPortfolio(address);
+  const portfolio = await nftService.getPortfolio(address, async (phase, partial) => {
+    // Progressive update — show what we have so far
+    if (partial.totalNFTs > 0) {
+      try {
+        const embed = embeds.portfolioEmbed(partial);
+        const phaseLabels: Record<string, string> = {
+          inventory: 'Loading deposits...',
+          deposits: 'Enriching metadata...',
+          metadata: 'Detecting purchase prices...',
+          prices: 'Fetching floor prices...',
+        };
+        const status = phaseLabels[phase] || '';
+        if (status) embed.setFooter({ text: `${status} · IMX: $${partial.imxPrice.toFixed(2)}` });
+        await interaction.editReply({ embeds: [embed] });
+      } catch {
+        // Ignore update failures
+      }
+    }
+  });
 
   if (portfolio.totalNFTs === 0) {
     await interaction.editReply({
