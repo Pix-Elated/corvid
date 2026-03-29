@@ -6,9 +6,11 @@ import { Client, TextChannel } from 'discord.js';
 import * as imx from './imx-service';
 import * as embeds from './embeds';
 import { getTrackerState, setLastSync } from './state';
+import { getWeeklySummary } from './analytics';
 
 const POLL_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 let pollInterval: NodeJS.Timeout | null = null;
+let lastWeeklySummaryDay = -1;
 
 /**
  * Start the hourly polling loop.
@@ -82,6 +84,19 @@ async function runPoll(client: Client): Promise<void> {
 
     // Also check watchlist wallets for activity
     await postWatchlistAlerts(channel, transfers, state);
+
+    // Post weekly summary on Sundays at the first poll of the day
+    const today = new Date();
+    if (today.getUTCDay() === 0 && lastWeeklySummaryDay !== today.getUTCDate()) {
+      try {
+        lastWeeklySummaryDay = today.getUTCDate();
+        const summary = await getWeeklySummary();
+        await channel.send({ embeds: [summary] });
+        console.log('[QuestTracker] Posted weekly summary');
+      } catch (err) {
+        console.error('[QuestTracker] Failed to post weekly summary:', err);
+      }
+    }
   } catch (error) {
     console.error('[QuestTracker] Poll error:', error);
   }
