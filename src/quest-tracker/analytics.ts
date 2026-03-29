@@ -14,8 +14,8 @@ interface SupplyBreakdown {
   burned: number;
   inPools: number;
   inTreasury: number;
-  inGameVaults: number;
-  circulating: number;
+  inKnownWallets: number; // other identified wallets (bots, distributors)
+  publicFloat: number; // everything not accounted for above
   holders: number;
   price: number;
 }
@@ -24,48 +24,40 @@ export async function getSupplyBreakdown(): Promise<SupplyBreakdown> {
   const info = await imx.getTokenInfo();
   const prices = await getTokenPrices();
 
-  // Get balances for known wallets
-  const categories: Record<string, number> = {
-    burned: 0,
-    pools: 0,
-    treasury: 0,
-    game: 0,
-  };
+  // Get QUEST balances for all known wallets
+  const buckets = { burned: 0, pools: 0, treasury: 0, other: 0 };
 
   for (const addr of KNOWN_ADDRESSES) {
     try {
       const balance = await imx.getWalletBalance(addr.address);
       switch (addr.type) {
         case 'burn':
-          categories.burned += balance;
+          buckets.burned += balance;
           break;
         case 'liquidity':
-          categories.pools += balance;
+          buckets.pools += balance;
           break;
         case 'treasury':
-          categories.treasury += balance;
-          break;
         case 'game':
-          categories.game += balance;
+          buckets.treasury += balance;
           break;
       }
-      // Small delay between calls
       await new Promise((r) => setTimeout(r, 300));
     } catch {
       // Skip failed balance lookups
     }
   }
 
-  const locked = categories.burned + categories.pools + categories.treasury + categories.game;
-  const circulating = info.totalSupply - locked;
+  const accounted = buckets.burned + buckets.pools + buckets.treasury;
+  const publicFloat = Math.max(0, info.totalSupply - accounted);
 
   return {
     totalSupply: info.totalSupply,
-    burned: categories.burned,
-    inPools: categories.pools,
-    inTreasury: categories.treasury,
-    inGameVaults: categories.game,
-    circulating: Math.max(0, circulating),
+    burned: buckets.burned,
+    inPools: buckets.pools,
+    inTreasury: buckets.treasury,
+    inKnownWallets: 0, // reserved for future identified wallets
+    publicFloat,
     holders: info.holders,
     price: prices.quest || 0,
   };
@@ -78,7 +70,7 @@ export function supplyEmbed(s: SupplyBreakdown): EmbedBuilder {
     if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
     return n.toFixed(0);
   };
-  const mcap = s.circulating * s.price;
+  const mcap = s.publicFloat * s.price;
 
   const bar = (n: number): string => {
     const filled = Math.round((n / s.totalSupply) * 20);
@@ -103,19 +95,17 @@ export function supplyEmbed(s: SupplyBreakdown): EmbedBuilder {
         value: `\`${bar(s.inPools)}\` **${fmt(s.inPools)}** (${pct(s.inPools)})`,
       },
       {
-        name: '🏦 Treasury / Vaults',
+        name: '🏦 Team / Treasury',
         value: `\`${bar(s.inTreasury)}\` **${fmt(s.inTreasury)}** (${pct(s.inTreasury)})`,
       },
       {
-        name: '🎮 In-Game Custody',
-        value: `\`${bar(s.inGameVaults)}\` **${fmt(s.inGameVaults)}** (${pct(s.inGameVaults)})`,
-      },
-      {
-        name: '🌊 Circulating',
-        value: `\`${bar(s.circulating)}\` **${fmt(s.circulating)}** (${pct(s.circulating)})`,
+        name: '🌊 Public Float',
+        value: `\`${bar(s.publicFloat)}\` **${fmt(s.publicFloat)}** (${pct(s.publicFloat)})`,
       }
     )
-    .setFooter({ text: 'QUEST on Immutable zkEVM' })
+    .setFooter({
+      text: 'Public Float = Total − Burned − Pools − Team wallets · QUEST on Immutable zkEVM',
+    })
     .setTimestamp();
 }
 
@@ -277,7 +267,7 @@ export async function getWeeklySummary(): Promise<EmbedBuilder> {
     return n.toFixed(0);
   };
 
-  const mcap = supply.circulating * supply.price;
+  const mcap = supply.publicFloat * supply.price;
   const bullish7d = pressure7d.netPressure > 0;
   const bullish24h = pressure24h.netPressure > 0;
 
@@ -292,9 +282,9 @@ export async function getWeeklySummary(): Promise<EmbedBuilder> {
       {
         name: '🌊 Supply Distribution',
         value: [
-          `Circulating: **${fmt(supply.circulating)}** (${((supply.circulating / supply.totalSupply) * 100).toFixed(1)}%)`,
-          `Pools: ${fmt(supply.inPools)} · Treasury: ${fmt(supply.inTreasury)}`,
-          `In-Game: ${fmt(supply.inGameVaults)} · Burned: ${fmt(supply.burned)}`,
+          `Public Float: **${fmt(supply.publicFloat)}** (${((supply.publicFloat / supply.totalSupply) * 100).toFixed(1)}%)`,
+          `Pools: ${fmt(supply.inPools)} · Team: ${fmt(supply.inTreasury)}`,
+          `Burned: ${fmt(supply.burned)}`,
         ].join('\n'),
       },
       {
