@@ -241,13 +241,14 @@ markersRouter.post('/markers/submit', submitLimiter, async (req: Request, res: R
   // Build issue — edits/deletions get different title, label, and body
   const isEdit = body.markers.length === 1 && body.markers[0].correction;
   const isDeletion = body.markers.length === 1 && body.markers[0].deletion;
+  const by = body.authorName ? ` (by ${body.authorName})` : '';
   const title = isDeletion
-    ? `Delete: ${body.markers[0].name}`
+    ? `Delete: ${body.markers[0].name}${by}`
     : isEdit
-      ? `Edit: ${body.markers[0].name}`
+      ? `Edit: ${body.markers[0].name}${by}`
       : body.markers.length === 1
-        ? `Map Marker: ${body.markers[0].name}`
-        : `Map Markers: ${body.markers.length} contributions`;
+        ? `Map Marker: ${body.markers[0].name}${by}`
+        : `Map Markers: ${body.markers.length} contributions${by}`;
 
   const issueBody = buildIssueBody(
     body.markers,
@@ -382,7 +383,7 @@ markersRouter.post(
           'X-GitHub-Api-Version': '2022-11-28',
         },
         body: JSON.stringify({
-          title: `Screenshot: ${body.markerName}`,
+          title: `Screenshot: ${body.markerName}${body.authorName ? ` (by ${body.authorName})` : ''}`,
           body: issueBody,
           labels: ['map-markers', 'screenshot-only'],
         }),
