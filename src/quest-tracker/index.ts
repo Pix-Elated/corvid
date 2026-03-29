@@ -6,3 +6,4 @@
 export { questCommand, setupQuestTrackingCommand, nftCommand } from './commands';
 export { loadTrackerState } from './state';
 export { startPolling, stopPolling } from './polling';
+export { startTreasuryWatch, stopTreasuryWatch } from './treasury-watch';

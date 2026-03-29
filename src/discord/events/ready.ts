@@ -28,6 +28,7 @@ import {
   setupQuestTrackingCommand,
   nftCommand,
   startPolling,
+  startTreasuryWatch,
 } from '../../quest-tracker';
 
 /**
@@ -67,8 +68,9 @@ export async function handleReady(client: Client): Promise<void> {
     console.error('[Ready] Failed to set up ban list card:', error);
   }
 
-  // Start QUEST tracker hourly polling
+  // Start QUEST tracker hourly polling + 6-hour treasury surveillance
   startPolling(client);
+  startTreasuryWatch(client);
 }
 
 /**
