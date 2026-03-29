@@ -54,16 +54,23 @@ async function runReport(client: Client): Promise<void> {
     const fromDate = new Date(Date.now() - SIX_HOURS_MS);
     const prices = await getTokenPrices();
 
+    // Fetch ALL QUEST transfers once, then filter per wallet
+    const allTransfers = await imx.getTransfers({ fromDate, limit: 500 });
+
     const reports: WalletReport[] = [];
 
     for (const wallet of WATCHED_WALLETS) {
       try {
-        const [balance, transfers] = await Promise.all([
-          imx.getWalletBalance(wallet.address),
-          imx.getTransfers({ wallet: wallet.address, fromDate, limit: 500 }),
-        ]);
+        // Delay between Blockscout balance calls to avoid rate limits
+        if (reports.length > 0) await new Promise((r) => setTimeout(r, 500));
+        const balance = await imx.getWalletBalance(wallet.address);
 
+        // Filter transfers involving THIS wallet
         const addr = wallet.address.toLowerCase();
+        const transfers = allTransfers.filter(
+          (t) => t.from.toLowerCase() === addr || t.to.toLowerCase() === addr
+        );
+
         let totalOut = 0;
         let totalIn = 0;
         const recipientMap = new Map<string, number>();
