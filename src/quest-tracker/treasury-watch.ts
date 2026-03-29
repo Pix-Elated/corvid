@@ -67,8 +67,8 @@ async function runReport(client: Client): Promise<void> {
 
     for (const wallet of WATCHED_WALLETS) {
       try {
-        // Delay between Blockscout balance calls to avoid rate limits
-        if (reports.length > 0) await new Promise((r) => setTimeout(r, 500));
+        // 2s between Blockscout balance calls — unauthenticated public API
+        if (reports.length > 0) await new Promise((r) => setTimeout(r, 2000));
         const balance = await imx.getWalletBalance(wallet.address);
 
         // Filter transfers involving THIS wallet

@@ -28,23 +28,21 @@ export async function getSupplyBreakdown(): Promise<SupplyBreakdown> {
   const buckets = { burned: 0, pools: 0, treasury: 0, other: 0 };
 
   for (const addr of KNOWN_ADDRESSES) {
-    try {
-      const balance = await imx.getWalletBalance(addr.address);
-      switch (addr.type) {
-        case 'burn':
-          buckets.burned += balance;
-          break;
-        case 'liquidity':
-          buckets.pools += balance;
-          break;
-        case 'treasury':
-        case 'game':
-          buckets.treasury += balance;
-          break;
-      }
-      await new Promise((r) => setTimeout(r, 300));
-    } catch {
-      // Skip failed balance lookups
+    // 2s between each Blockscout call — unauthenticated public API
+    if (addr !== KNOWN_ADDRESSES[0]) await new Promise((r) => setTimeout(r, 2000));
+
+    const balance = await imx.getWalletBalance(addr.address);
+    switch (addr.type) {
+      case 'burn':
+        buckets.burned += balance;
+        break;
+      case 'liquidity':
+        buckets.pools += balance;
+        break;
+      case 'treasury':
+      case 'game':
+        buckets.treasury += balance;
+        break;
     }
   }
 
@@ -267,13 +265,13 @@ export async function getWeeklySummary(): Promise<EmbedBuilder> {
     return n.toFixed(0);
   };
 
-  const mcap = supply.publicFloat * supply.price;
   const bullish7d = pressure7d.netPressure > 0;
   const bullish24h = pressure24h.netPressure > 0;
 
-  return new EmbedBuilder()
-    .setTitle('📋 QUEST Weekly Summary')
-    .setColor(0xc9a959)
+  const embed = new EmbedBuilder().setTitle('📋 QUEST Weekly Summary').setColor(0xc9a959);
+
+  const mcap = supply.publicFloat * supply.price;
+  embed
     .setDescription(
       `Price: **$${supply.price.toFixed(4)}** · MCap: **$${fmt(mcap)}**\n` +
         `Holders: **${supply.holders.toLocaleString()}** · Supply: **${fmt(supply.totalSupply)}**`
@@ -304,4 +302,6 @@ export async function getWeeklySummary(): Promise<EmbedBuilder> {
     )
     .setFooter({ text: 'QUEST on Immutable zkEVM · Excludes ecosystem wallets' })
     .setTimestamp();
+
+  return embed;
 }
