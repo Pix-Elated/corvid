@@ -23,6 +23,7 @@ import * as imx from './imx-service';
 import * as nftService from './nft-service';
 import * as embeds from './embeds';
 import * as state from './state';
+import * as analytics from './analytics';
 
 export const questCommand = {
   data: new SlashCommandBuilder()
@@ -101,6 +102,31 @@ export const questCommand = {
             .setMinValue(100)
             .setMaxValue(10_000_000)
         )
+    )
+    .addSubcommand((sub) =>
+      sub.setName('supply').setDescription('QUEST supply breakdown — circulating, locked, burned')
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName('pressure')
+        .setDescription('Buy/sell pressure from DEX pool flows')
+        .addStringOption((opt) =>
+          opt
+            .setName('period')
+            .setDescription('Time period')
+            .setRequired(false)
+            .addChoices(
+              { name: '24 hours', value: '24' },
+              { name: '7 days', value: '168' },
+              { name: '30 days', value: '720' }
+            )
+        )
+    )
+    .addSubcommand((sub) =>
+      sub.setName('holders').setDescription('Holder distribution and concentration stats')
+    )
+    .addSubcommand((sub) =>
+      sub.setName('summary').setDescription('Weekly summary — supply, pressure, holders, price')
     ),
 
   async execute(interaction: ChatInputCommandInteraction): Promise<void> {
@@ -112,6 +138,14 @@ export const questCommand = {
           return await handleWallet(interaction);
         case 'whales':
           return await handleWhales(interaction);
+        case 'supply':
+          return await handleSupply(interaction);
+        case 'pressure':
+          return await handlePressure(interaction);
+        case 'holders':
+          return await handleHolders(interaction);
+        case 'summary':
+          return await handleSummary(interaction);
         case 'transfers':
           return await handleTransfers(interaction);
         case 'price':
@@ -434,6 +468,33 @@ export const setupQuestTrackingCommand = {
     });
   },
 };
+
+// ─── Analytics Handlers ─────────────────────────────────────────────────────
+
+async function handleSupply(interaction: ChatInputCommandInteraction): Promise<void> {
+  await interaction.deferReply();
+  const supply = await analytics.getSupplyBreakdown();
+  await interaction.editReply({ embeds: [analytics.supplyEmbed(supply)] });
+}
+
+async function handlePressure(interaction: ChatInputCommandInteraction): Promise<void> {
+  const hours = parseInt(interaction.options.getString('period') || '24', 10);
+  await interaction.deferReply();
+  const pressure = await analytics.getBuySellPressure(hours);
+  await interaction.editReply({ embeds: [analytics.pressureEmbed(pressure)] });
+}
+
+async function handleHolders(interaction: ChatInputCommandInteraction): Promise<void> {
+  await interaction.deferReply();
+  const stats = await analytics.getHolderStats();
+  await interaction.editReply({ embeds: [analytics.holderStatsEmbed(stats)] });
+}
+
+async function handleSummary(interaction: ChatInputCommandInteraction): Promise<void> {
+  await interaction.deferReply();
+  const embed = await analytics.getWeeklySummary();
+  await interaction.editReply({ embeds: [embed] });
+}
 
 // ─── NFT Commands ───────────────────────────────────────────────────────────
 
