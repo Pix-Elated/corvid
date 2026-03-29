@@ -249,22 +249,39 @@ export async function getTokenInfo(): Promise<QuestTokenInfo> {
  * Get the QUEST balance for a specific wallet via Blockscout.
  */
 export async function getWalletBalance(wallet: string): Promise<number> {
-  try {
-    const url = `${BLOCKSCOUT_BASE}/addresses/${wallet}/tokens?type=ERC-20`;
-    const data = await fetchJson<{
-      items: Array<{
-        token: { address: string };
-        value: string;
-      }>;
-    }>(url, {});
+  const url = `${BLOCKSCOUT_BASE}/addresses/${wallet}/tokens?type=ERC-20`;
 
-    const questToken = (data.items || []).find(
-      (item) => item.token.address.toLowerCase() === QUEST_CONTRACT.toLowerCase()
-    );
-    return questToken ? rawToQuest(questToken.value) : 0;
-  } catch {
-    return 0;
+  // Blockscout is unauthenticated — retry aggressively until we get real data
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try {
+      const res = await fetch(url, { headers: { Accept: 'application/json' } });
+
+      if (res.status === 429 || !res.ok) {
+        const text = await res.text().catch(() => '');
+        const delay = 3000 * Math.pow(2, Math.min(attempt, 4)) + Math.random() * 1000;
+        console.warn(
+          `[IMX] Blockscout ${res.status} for ${wallet.slice(0, 10)}, retry ${attempt + 1}/10 in ${Math.round(delay)}ms: ${text.slice(0, 100)}`
+        );
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+
+      const data = (await res.json()) as {
+        items: Array<{ token: { address: string }; value: string }>;
+      };
+
+      const questToken = (data.items || []).find(
+        (item) => item.token.address.toLowerCase() === QUEST_CONTRACT.toLowerCase()
+      );
+      return questToken ? rawToQuest(questToken.value) : 0;
+    } catch {
+      const delay = 2000 * (attempt + 1);
+      await new Promise((r) => setTimeout(r, delay));
+    }
   }
+
+  // After 10 retries, throw so callers know something is wrong
+  throw new Error(`Failed to get balance for ${wallet.slice(0, 10)} after 10 retries`);
 }
 
 // ─── Aggregation Helpers ────────────────────────────────────────────────────
