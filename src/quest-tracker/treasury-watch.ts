@@ -12,9 +12,15 @@ import { getTrackerState } from './state';
 const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
 let interval: NodeJS.Timeout | null = null;
 
-/** Wallets to surveil — treasury + game vaults */
+/** Wallets to surveil — treasury, game vaults, and flagged liquidity actors */
 const WATCHED_TYPES = new Set(['treasury', 'game']);
-const WATCHED_WALLETS = KNOWN_ADDRESSES.filter((a) => WATCHED_TYPES.has(a.type));
+/** Additional addresses to watch regardless of type */
+const EXTRA_WATCH = new Set([
+  '0x89142e95d3124f766d840fc7bc16b4b7734cc3d9', // Potentially: Market Maker / Arb Bot — 182M volume
+]);
+const WATCHED_WALLETS = KNOWN_ADDRESSES.filter(
+  (a) => WATCHED_TYPES.has(a.type) || EXTRA_WATCH.has(a.address)
+);
 
 export function startTreasuryWatch(client: Client): void {
   if (interval) return;
