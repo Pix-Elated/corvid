@@ -12,9 +12,15 @@ import { getTrackerState } from './state';
 const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
 let interval: NodeJS.Timeout | null = null;
 
-/** Wallets to surveil — treasury + game vaults */
+/** Wallets to surveil — treasury, game vaults, and flagged liquidity actors */
 const WATCHED_TYPES = new Set(['treasury', 'game']);
-const WATCHED_WALLETS = KNOWN_ADDRESSES.filter((a) => WATCHED_TYPES.has(a.type));
+/** Additional addresses to watch regardless of type */
+const EXTRA_WATCH = new Set([
+  '0x89142e95d3124f766d840fc7bc16b4b7734cc3d9', // Potentially: Market Maker / Arb Bot — 182M volume
+]);
+const WATCHED_WALLETS = KNOWN_ADDRESSES.filter(
+  (a) => WATCHED_TYPES.has(a.type) || EXTRA_WATCH.has(a.address)
+);
 
 export function startTreasuryWatch(client: Client): void {
   if (interval) return;
@@ -54,16 +60,23 @@ async function runReport(client: Client): Promise<void> {
     const fromDate = new Date(Date.now() - SIX_HOURS_MS);
     const prices = await getTokenPrices();
 
+    // Fetch ALL QUEST transfers once, then filter per wallet
+    const allTransfers = await imx.getTransfers({ fromDate, limit: 500 });
+
     const reports: WalletReport[] = [];
 
     for (const wallet of WATCHED_WALLETS) {
       try {
-        const [balance, transfers] = await Promise.all([
-          imx.getWalletBalance(wallet.address),
-          imx.getTransfers({ wallet: wallet.address, fromDate, limit: 500 }),
-        ]);
+        // Delay between Blockscout balance calls to avoid rate limits
+        if (reports.length > 0) await new Promise((r) => setTimeout(r, 500));
+        const balance = await imx.getWalletBalance(wallet.address);
 
+        // Filter transfers involving THIS wallet
         const addr = wallet.address.toLowerCase();
+        const transfers = allTransfers.filter(
+          (t) => t.from.toLowerCase() === addr || t.to.toLowerCase() === addr
+        );
+
         let totalOut = 0;
         let totalIn = 0;
         const recipientMap = new Map<string, number>();

@@ -44,6 +44,27 @@ export const KNOWN_ADDRESSES: KnownAddress[] = [
     type: 'treasury',
   },
 
+  // Day-1 distribution wallet — sent 42M QUEST in 3 txns on launch day (2025-03-30), received 0
+  {
+    address: '0x40e11e04d37d2b185cb7a4206ee9b8b33fd64986',
+    label: 'Day-1 QUEST Distributor',
+    type: 'treasury',
+  },
+
+  // Unverified contract — 61M volume, net -50M outflow, active since 2025-05-02
+  {
+    address: '0xd448104af227270317e1814b076afbab583b4f87',
+    label: 'Potentially: RQ Distribution Contract',
+    type: 'treasury',
+  },
+
+  // EOA with 182M volume, near 1:1 send/receive — likely market maker or arb bot
+  {
+    address: '0x89142e95d3124f766d840fc7bc16b4b7734cc3d9',
+    label: 'Potentially: Market Maker / Arb Bot',
+    type: 'liquidity',
+  },
+
   // Liquidity pools — DEX, not a "holder"
   {
     address: '0xbe2930d274f862542740dcdc95257b3163172343',
