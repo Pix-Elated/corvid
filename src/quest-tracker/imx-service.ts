@@ -125,7 +125,9 @@ export async function getTransfers(opts: {
     params.set('page_size', String(Math.min(200, maxItems - transfers.length)));
 
     if (opts.wallet) params.set('account_address', opts.wallet);
-    if (opts.fromDate) params.set('from_updated_at', opts.fromDate.toISOString());
+    // activity-history REQUIRES from_updated_at — default to 30 days back
+    const fromDate = opts.fromDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    params.set('from_updated_at', fromDate.toISOString());
     if (opts.toDate) params.set('to_updated_at', opts.toDate.toISOString());
     if (cursor) params.set('page_cursor', cursor);
 

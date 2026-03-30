@@ -11,6 +11,7 @@ import {
   getVolumeSummary,
   calculateNetFlow,
 } from './imx-service';
+import { KNOWN_ADDRESSES } from './known-addresses';
 
 const QUEST_COLOR = 0xc9a959; // Gold
 const WHALE_COLOR = 0xe74c3c; // Red
@@ -158,7 +159,7 @@ export function hourlyDigestEmbed(
     .addFields(
       {
         name: 'Volume',
-        value: `**${formatQuest(summary.totalVolume * 1e6)}** QUEST`,
+        value: `**${formatQuest(summary.totalVolume * 1e6)}** QUEST${tokenInfo.price ? ` (~$${(summary.totalVolume * tokenInfo.price).toFixed(0)})` : ''}`,
         inline: true,
       },
       { name: 'Transfers', value: summary.transferCount.toLocaleString(), inline: true },
@@ -169,10 +170,19 @@ export function hourlyDigestEmbed(
       }
     );
 
-  // Whale movements
+  // Whale movements with USD and direction
+  const poolAddrs = new Set(
+    KNOWN_ADDRESSES.filter((a) => a.type === 'liquidity').map((a) => a.address.toLowerCase())
+  );
+  const price = tokenInfo.price || 0;
+
   if (whaleTransfers.length > 0) {
     const lines = whaleTransfers.slice(0, 5).map((t) => {
-      return `**${formatQuest(t.rawAmount)}** — ${addrLink(t.from)} → ${addrLink(t.to)}`;
+      const usd = price > 0 ? ` (~$${(t.amount * price).toFixed(0)})` : '';
+      const toPool = poolAddrs.has(t.to.toLowerCase());
+      const fromPool = poolAddrs.has(t.from.toLowerCase());
+      const dir = toPool && !fromPool ? '🔴 SELL' : fromPool && !toPool ? '🟢 BUY' : '↔️';
+      return `${dir} **${formatQuest(t.rawAmount)}**${usd} — ${addrLink(t.from)} → ${addrLink(t.to)}`;
     });
     embed.addFields({
       name: `🐋 Whale Movements (${whaleTransfers.length})`,
@@ -185,9 +195,13 @@ export function hourlyDigestEmbed(
   // Largest single transfer
   if (summary.largestTransfer) {
     const t = summary.largestTransfer;
+    const usd = price > 0 ? ` (~$${(t.amount * price).toFixed(0)})` : '';
+    const toPool = poolAddrs.has(t.to.toLowerCase());
+    const fromPool = poolAddrs.has(t.from.toLowerCase());
+    const dir = toPool && !fromPool ? '🔴 SELL' : fromPool && !toPool ? '🟢 BUY' : '↔️';
     embed.addFields({
-      name: '🏆 Largest Transfer',
-      value: `**${formatQuest(t.rawAmount)}** — ${addrLink(t.from)} → ${addrLink(t.to)} ${txLink(t.txHash)}`,
+      name: `🏆 Largest Transfer — ${dir}`,
+      value: `**${formatQuest(t.rawAmount)}**${usd} — ${addrLink(t.from)} → ${addrLink(t.to)} ${txLink(t.txHash)}`,
     });
   }
 
