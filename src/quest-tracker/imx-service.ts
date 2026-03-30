@@ -267,12 +267,16 @@ export async function getWalletBalance(wallet: string): Promise<number> {
       }
 
       const data = (await res.json()) as {
-        items: Array<{ token: { address: string }; value: string }>;
+        items: Array<{
+          token: { address?: string; address_hash?: string };
+          value: string;
+        }>;
       };
 
-      const questToken = (data.items || []).find(
-        (item) => item.token.address.toLowerCase() === QUEST_CONTRACT.toLowerCase()
-      );
+      const questToken = (data.items || []).find((item) => {
+        const addr = (item.token.address_hash || item.token.address || '').toLowerCase();
+        return addr === QUEST_CONTRACT.toLowerCase();
+      });
       return questToken ? rawToQuest(questToken.value) : 0;
     } catch {
       const delay = 2000 * (attempt + 1);
