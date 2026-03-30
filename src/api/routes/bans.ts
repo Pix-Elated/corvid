@@ -67,20 +67,21 @@ bansRouter.post('/bans/identity-log', (req: Request, res: Response) => {
     characterName?: string;
     guildTag?: string;
     timestamp?: string;
+    isNewIdentity?: boolean;
   };
 
   const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
   const ipStr = String(ip);
 
-  console.log('[Bans] Identity logged:', {
-    ip: ipStr,
-    characterName: body.characterName,
-    guildTag: body.guildTag,
-    timestamp: body.timestamp,
-  });
-
-  // Log identity to Discord (fire-and-forget)
-  void sendIdentityLog(body, ipStr);
+  // Only log to Discord for NEW identities (first visit / name change), not every page load
+  if (body.isNewIdentity) {
+    console.log('[Bans] New identity:', {
+      ip: ipStr,
+      characterName: body.characterName,
+      guildTag: body.guildTag,
+    });
+    void sendIdentityLog(body, ipStr);
+  }
 
   // Check if this IP is banned and return result
   void checkIpBan(ipStr)
