@@ -22,6 +22,7 @@ import { recordShutdown, sendStartupMessage } from './discord/startup';
 import { stopAutoClose } from './tickets/autoclose';
 import { stopBanListRefresh } from './hall-of-shame';
 import { loadTrackerState, stopPolling, stopTreasuryWatch } from './quest-tracker';
+import { loadIpIdentityState } from './ip-identity';
 
 let client: Client | null = null;
 
@@ -51,6 +52,7 @@ async function main(): Promise<void> {
   loadReleaseState();
   loadAdoptedChannelsState();
   loadTrackerState();
+  loadIpIdentityState();
 
   // Create Discord client
   client = createClient();
