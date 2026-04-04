@@ -8,6 +8,7 @@ import {
   ButtonStyle,
 } from 'discord.js';
 import { checkIpBan } from '../../hall-of-shame/ban-list-cache';
+import { recordIpIdentity } from '../../ip-identity';
 
 export const bansRouter = Router();
 
@@ -73,6 +74,9 @@ bansRouter.post('/bans/identity-log', (req: Request, res: Response) => {
   const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
   const ipStr = String(ip);
 
+  // Track IP-to-identity mapping and detect duplicates
+  const otherNames = recordIpIdentity(ipStr, body.characterName || '', body.guildTag || '');
+
   // Only log to Discord for NEW identities (first visit / name change), not every page load
   if (body.isNewIdentity) {
     console.log('[Bans] New identity:', {
@@ -80,7 +84,10 @@ bansRouter.post('/bans/identity-log', (req: Request, res: Response) => {
       characterName: body.characterName,
       guildTag: body.guildTag,
     });
-    void sendIdentityLog(body, ipStr);
+    void sendIdentityLog(body, ipStr, otherNames);
+  } else if (otherNames.length > 0) {
+    // Not a new identity prompt, but IP has other names — still alert
+    void sendIdentityLog(body, ipStr, otherNames);
   }
 
   // Check if this IP is banned and return result
@@ -123,7 +130,8 @@ bansRouter.post('/bans/ip-check', (req: Request, res: Response) => {
 
 async function sendIdentityLog(
   body: { characterName?: string; guildTag?: string; timestamp?: string },
-  ip: string
+  ip: string,
+  otherNames: string[] = []
 ): Promise<void> {
   if (!discordClient) return;
 
@@ -151,15 +159,25 @@ async function sendIdentityLog(
       channel = created as TextChannel;
     }
 
+    const isDuplicate = otherNames.length > 0;
     const embed = new EmbedBuilder()
-      .setTitle('Worldmap Identity')
-      .setColor(0x3498db)
+      .setTitle(isDuplicate ? '\u26A0\uFE0F Duplicate IP Detected' : 'Worldmap Identity')
+      .setColor(isDuplicate ? 0xe67e22 : 0x3498db)
       .addFields(
         { name: 'Character', value: body.characterName || 'N/A', inline: true },
         { name: 'Guild', value: body.guildTag || 'none', inline: true },
         { name: 'IP', value: `\`${ip}\``, inline: true }
-      )
-      .setTimestamp(body.timestamp ? new Date(body.timestamp) : new Date());
+      );
+
+    if (isDuplicate) {
+      embed.addFields({
+        name: 'Other names on this IP',
+        value: otherNames.map((n) => `\u2022 ${n}`).join('\n'),
+        inline: false,
+      });
+    }
+
+    embed.setTimestamp(body.timestamp ? new Date(body.timestamp) : new Date());
 
     const banUserBtn = new ButtonBuilder()
       .setCustomId(`ban_user_${Date.now()}`)
