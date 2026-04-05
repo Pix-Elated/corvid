@@ -28,6 +28,7 @@ import {
 } from '../commands/moderation';
 import { scanCommand } from '../commands/scan';
 import { worldmapBanCommand } from '../commands/worldmap-ban';
+import { clusterCommand } from '../commands/cluster';
 import { questCommand, setupQuestTrackingCommand, nftCommand } from '../../quest-tracker';
 import {
   handleTicketButton,
@@ -399,6 +400,9 @@ export async function handleInteractionCreate(interaction: Interaction): Promise
         break;
       case 'worldmap-ban':
         await worldmapBanCommand.execute(interaction);
+        break;
+      case 'cluster':
+        await clusterCommand.execute(interaction);
         break;
       case 'quest':
         await questCommand.execute(interaction);
