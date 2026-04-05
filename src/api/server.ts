@@ -1,3 +1,4 @@
+import type { Server } from 'http';
 import express, { Application, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
@@ -14,13 +15,17 @@ const ALLOWED_ORIGINS = [
   'https://pix-elated.github.io',
 ];
 
-// Rate limiter: 100 requests per 15 minutes per IP
+// Rate limiter: 100 requests per 15 minutes per IP.
+// SSE stream connections are long-lived and would exhaust the window
+// with legitimate usage (browser tab reopens, reconnects), so they're
+// explicitly exempted — every other endpoint still pays the toll.
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests, please try again later.' },
+  skip: (req) => req.path === '/api/bans/stream',
 });
 
 /**
@@ -79,14 +84,16 @@ export function createApiServer(): Application {
 }
 
 /**
- * Start the API server on the specified port
+ * Start the API server on the specified port.
+ * Resolves with the underlying http.Server so callers (shutdown handler)
+ * can close it on SIGTERM.
  */
-export function startApiServer(app: Application, port: number): Promise<void> {
+export function startApiServer(app: Application, port: number): Promise<Server> {
   return new Promise((resolve, reject) => {
     try {
       const server = app.listen(port, () => {
         console.log(`[API] HTTP server listening on port ${port}`);
-        resolve();
+        resolve(server);
       });
 
       server.on('error', (error) => {

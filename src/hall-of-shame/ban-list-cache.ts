@@ -4,27 +4,38 @@
  * Fetches from GitHub raw URL and caches for 5 minutes to avoid
  * hammering GitHub on every identity-log / ip-check request.
  * Invalidated immediately when Corvid commits a new ban entry.
+ *
+ * Emits 'changed' events on invalidation so SSE consumers can push
+ * refreshes to connected clients (worldmap browser, RavenHUD app).
  */
+
+import { EventEmitter } from 'events';
 
 const GITHUB_RAW_URL =
   'https://raw.githubusercontent.com/Pix-Elated/ravenhud/master/data/hall-of-shame.json';
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const FETCH_TIMEOUT_MS = 5000;
 
-interface BanEntry {
+export interface BanEntry {
   type: 'character' | 'guild' | 'discord' | 'ip';
   name: string;
   reason: string;
   added: string;
 }
 
-interface BanList {
+export interface BanList {
   version: number;
   entries: BanEntry[];
 }
 
 let cachedBanList: BanList | null = null;
 let cacheTimestamp = 0;
+
+/**
+ * Event emitter for ban list changes. SSE route subscribes to 'changed'
+ * to push invalidation events to connected clients in real time.
+ */
+export const banListEvents = new EventEmitter();
 
 /**
  * Get the ban list, using cache if fresh enough.
@@ -71,8 +82,10 @@ export async function checkIpBan(ip: string): Promise<BanEntry | null> {
 /**
  * Invalidate the cache. Called after Corvid commits a new ban entry
  * so the next check picks up the new ban immediately.
+ * Emits a 'changed' event so SSE clients can refresh their copies.
  */
 export function invalidateBanListCache(): void {
   cachedBanList = null;
   cacheTimestamp = 0;
+  banListEvents.emit('changed');
 }
