@@ -202,10 +202,39 @@ export function closeSseConnections(): void {
  * Checks the requester's IP against the ban list.
  * Used by the RavenHUD Electron app (main process).
  * No Discord logging — purely a ban status check.
+ *
+ * Body is optional. If provided, the submission is also logged to the
+ * identity graph for /cluster analysis. Fields mirror /bans/identity-log:
+ * fingerprint, characterName, guildTag, discordId.
  */
 bansRouter.post('/bans/ip-check', (req: Request, res: Response) => {
   const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
   const ipStr = String(ip);
+  const userAgent = String(req.headers['user-agent'] || '');
+
+  const body = (req.body || {}) as {
+    fingerprint?: string;
+    characterName?: string;
+    guildTag?: string;
+    discordId?: string;
+  };
+
+  // Log submission for UEBA clustering. RQC sends character/guild/discord
+  // from the saved player profile, so we can link Electron-app visits to
+  // the same graph as worldmap visits.
+  if (body.fingerprint || body.characterName || body.discordId) {
+    recordSubmission({
+      ts: new Date().toISOString(),
+      fingerprint: body.fingerprint || '',
+      ip: ipStr,
+      discordId: body.discordId,
+      characterName: body.characterName,
+      guildTag: body.guildTag,
+      ua: userAgent,
+      kind: 'ban_check',
+      wasBlocked: false,
+    });
+  }
 
   void checkIpBan(ipStr)
     .then((ipBan) => {
