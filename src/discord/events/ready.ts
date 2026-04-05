@@ -22,6 +22,7 @@ import {
 } from '../commands/moderation';
 import { scanCommand } from '../commands/scan';
 import { worldmapBanCommand } from '../commands/worldmap-ban';
+import { clusterCommand } from '../commands/cluster';
 import { postOrUpdateBanList, startBanListRefresh } from '../../hall-of-shame';
 import {
   questCommand,
@@ -96,6 +97,7 @@ async function registerCommands(client: Client): Promise<void> {
     clearWarningsCommand.data.toJSON(),
     scanCommand.data.toJSON(),
     worldmapBanCommand.data.toJSON(),
+    clusterCommand.data.toJSON(),
     questCommand.data.toJSON(),
     setupQuestTrackingCommand.data.toJSON(),
     nftCommand.data.toJSON(),
