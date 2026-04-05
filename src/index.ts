@@ -24,6 +24,7 @@ import { stopAutoClose } from './tickets/autoclose';
 import { stopBanListRefresh } from './hall-of-shame';
 import { loadTrackerState, stopPolling, stopTreasuryWatch } from './quest-tracker';
 import { loadIpIdentityState } from './ip-identity';
+import { loadSubmissionsState } from './submissions';
 
 let client: Client | null = null;
 let httpServer: Server | null = null;
@@ -55,6 +56,7 @@ async function main(): Promise<void> {
   loadAdoptedChannelsState();
   loadTrackerState();
   loadIpIdentityState();
+  loadSubmissionsState();
 
   // Create Discord client
   client = createClient();
