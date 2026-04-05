@@ -10,6 +10,7 @@ import {
 import { banListEvents, checkIpBan, getCachedBanList } from '../../hall-of-shame/ban-list-cache';
 import { recordIpIdentity } from '../../ip-identity';
 import { recordSubmission } from '../../submissions';
+import { checkAndAutoBan, type IAutoBanResult } from '../../hall-of-shame/auto-ban';
 
 export const bansRouter = Router();
 
@@ -86,7 +87,7 @@ bansRouter.post('/bans/identity-log', (req: Request, res: Response) => {
   const otherNames = recordIpIdentity(ipStr, body.characterName || '', body.guildTag || '');
 
   // Log the submission for identity-graph / cluster analysis (UEBA Phase 1)
-  recordSubmission({
+  const submission = {
     ts: new Date().toISOString(),
     fingerprint: body.fingerprint || '',
     ip: ipStr,
@@ -94,8 +95,17 @@ bansRouter.post('/bans/identity-log', (req: Request, res: Response) => {
     characterName: body.characterName,
     guildTag: body.guildTag,
     ua: userAgent,
-    kind: 'identity_log',
+    kind: 'identity_log' as const,
     wasBlocked: false,
+  };
+  recordSubmission(submission);
+
+  // Auto-ban evasion check — fires in the background so the response isn't
+  // blocked on the GitHub commit. The SSE stream propagates the new ban.
+  void checkAndAutoBan(submission).then((result) => {
+    if (result.banned) {
+      void sendAutoBanAlert(result, ipStr);
+    }
   });
 
   // Only log to Discord for NEW identities (first visit / name change), not every page load
@@ -386,5 +396,43 @@ async function sendBanReport(
     await channel.send({ embeds: [embed] });
   } catch (err) {
     console.error('[Bans] Failed to send Discord report:', err);
+  }
+}
+
+async function sendAutoBanAlert(result: IAutoBanResult, ip: string): Promise<void> {
+  if (!discordClient || !result.banned || !result.name) return;
+  try {
+    const guild = discordClient.guilds.cache.first();
+    if (!guild) return;
+
+    const channel = guild.channels.cache.find(
+      (ch) => ch.name === MOD_LOG_CHANNEL && ch instanceof TextChannel
+    ) as TextChannel | undefined;
+    if (!channel) return;
+
+    const embed = new EmbedBuilder()
+      .setTitle('\uD83E\uDD16 Auto-Ban: Evasion Detected')
+      .setColor(0xdc2626)
+      .addFields(
+        { name: 'Banned Name', value: `**${result.name}**`, inline: true },
+        { name: 'IP', value: `\`${ip}\``, inline: true },
+        {
+          name: 'Seed',
+          value: `\`${(result.seed || '').slice(0, 32)}${(result.seed || '').length > 32 ? '...' : ''}\``,
+          inline: false,
+        },
+        {
+          name: 'Previously used',
+          value: (result.previousNames || []).map((n) => `\u2022 ${n}`).join('\n') || 'unknown',
+          inline: false,
+        },
+        { name: 'Reason', value: result.reason || 'auto-ban', inline: false }
+      )
+      .setFooter({ text: 'Review with /cluster seed:<above> if this looks like a false positive' })
+      .setTimestamp();
+
+    await channel.send({ embeds: [embed] });
+  } catch (err) {
+    console.error('[Bans] Failed to send auto-ban alert:', err);
   }
 }
