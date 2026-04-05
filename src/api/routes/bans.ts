@@ -9,6 +9,7 @@ import {
 } from 'discord.js';
 import { banListEvents, checkIpBan, getCachedBanList } from '../../hall-of-shame/ban-list-cache';
 import { recordIpIdentity } from '../../ip-identity';
+import { recordSubmission } from '../../submissions';
 
 export const bansRouter = Router();
 
@@ -73,13 +74,29 @@ bansRouter.post('/bans/identity-log', (req: Request, res: Response) => {
     guildTag?: string;
     timestamp?: string;
     isNewIdentity?: boolean;
+    fingerprint?: string;
+    discordId?: string;
   };
 
   const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
   const ipStr = String(ip);
+  const userAgent = String(req.headers['user-agent'] || '');
 
   // Track IP-to-identity mapping and detect duplicates
   const otherNames = recordIpIdentity(ipStr, body.characterName || '', body.guildTag || '');
+
+  // Log the submission for identity-graph / cluster analysis (UEBA Phase 1)
+  recordSubmission({
+    ts: new Date().toISOString(),
+    fingerprint: body.fingerprint || '',
+    ip: ipStr,
+    discordId: body.discordId,
+    characterName: body.characterName,
+    guildTag: body.guildTag,
+    ua: userAgent,
+    kind: 'identity_log',
+    wasBlocked: false,
+  });
 
   // Only log to Discord for NEW identities (first visit / name change), not every page load
   if (body.isNewIdentity) {
