@@ -7,7 +7,7 @@ import {
   ButtonBuilder,
   ButtonStyle,
 } from 'discord.js';
-import { checkIpBan } from '../../hall-of-shame/ban-list-cache';
+import { banListEvents, checkIpBan, getCachedBanList } from '../../hall-of-shame/ban-list-cache';
 import { recordIpIdentity } from '../../ip-identity';
 
 export const bansRouter = Router();
@@ -15,6 +15,10 @@ export const bansRouter = Router();
 let discordClient: Client | null = null;
 const MOD_LOG_CHANNEL = 'moderation-log';
 const RAVENHUD_LOG_CHANNEL = 'ravenhud-logs';
+
+/** Open SSE responses. Tracked so shutdown can drain them cleanly. */
+const sseClients = new Set<Response>();
+const SSE_KEEPALIVE_MS = 25_000;
 
 /** Set the Discord client so ban reports can post to the mod log */
 export function setBansDiscordClient(client: Client): void {
@@ -104,6 +108,77 @@ bansRouter.post('/bans/identity-log', (req: Request, res: Response) => {
       res.json({ success: true, banned: false });
     });
 });
+
+/**
+ * GET /api/bans/list
+ * Returns the current ban list from Corvid's in-memory cache.
+ * Clients (worldmap browser, RavenHUD app) call this once on load and
+ * re-call when notified via /bans/stream SSE.
+ */
+bansRouter.get('/bans/list', (_req: Request, res: Response) => {
+  void getCachedBanList()
+    .then((banList) => {
+      res.json(banList);
+    })
+    .catch((err) => {
+      console.error('[Bans] Failed to load ban list:', err);
+      // Fail-closed: empty list rather than 500, matches ban-list-cache semantics.
+      res.json({ version: 2, entries: [] });
+    });
+});
+
+/**
+ * GET /api/bans/stream
+ * Server-Sent Events stream that pushes 'ban-list-changed' events whenever
+ * the ban list is invalidated. Clients re-fetch /bans/list on each event.
+ * Sends a keepalive comment every 25s so the Azure Container Apps edge
+ * doesn't close the idle connection.
+ */
+bansRouter.get('/bans/stream', (req: Request, res: Response) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+
+  // Initial handshake so the client knows the stream is live.
+  res.write('event: ready\ndata: {}\n\n');
+
+  const onChanged = (): void => {
+    res.write(`event: ban-list-changed\ndata: {"ts":"${new Date().toISOString()}"}\n\n`);
+  };
+
+  const keepalive = setInterval(() => {
+    res.write(': keepalive\n\n');
+  }, SSE_KEEPALIVE_MS);
+
+  banListEvents.on('changed', onChanged);
+  sseClients.add(res);
+
+  const cleanup = (): void => {
+    clearInterval(keepalive);
+    banListEvents.off('changed', onChanged);
+    sseClients.delete(res);
+  };
+
+  req.on('close', cleanup);
+  req.on('error', cleanup);
+});
+
+/**
+ * Close all open SSE connections. Called during graceful shutdown
+ * so in-flight long-lived connections terminate cleanly.
+ */
+export function closeSseConnections(): void {
+  for (const res of sseClients) {
+    try {
+      res.end();
+    } catch {
+      // ignore — client already gone
+    }
+  }
+  sseClients.clear();
+}
 
 /**
  * POST /api/bans/ip-check

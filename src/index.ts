@@ -16,8 +16,9 @@ import { handleMessageDelete } from './discord/events/messageDelete';
 import { handleInteractionCreate } from './discord/events/interactionCreate';
 import { handleGuildMemberAdd } from './discord/events/guildMemberAdd';
 import { handleGuildMemberRemove } from './discord/events/guildMemberRemove';
+import type { Server } from 'http';
 import { createApiServer, startApiServer } from './api/server';
-import { setBansDiscordClient } from './api/routes/bans';
+import { closeSseConnections, setBansDiscordClient } from './api/routes/bans';
 import { recordShutdown, sendStartupMessage } from './discord/startup';
 import { stopAutoClose } from './tickets/autoclose';
 import { stopBanListRefresh } from './hall-of-shame';
@@ -25,6 +26,7 @@ import { loadTrackerState, stopPolling, stopTreasuryWatch } from './quest-tracke
 import { loadIpIdentityState } from './ip-identity';
 
 let client: Client | null = null;
+let httpServer: Server | null = null;
 
 /**
  * Main entry point
@@ -124,7 +126,7 @@ async function main(): Promise<void> {
 
   // Start Express API server
   const app = createApiServer();
-  await startApiServer(app, config.port);
+  httpServer = await startApiServer(app, config.port);
 
   // Login to Discord
   try {
@@ -153,6 +155,24 @@ async function shutdown(signal: string): Promise<void> {
   stopBanListRefresh();
   stopPolling();
   stopTreasuryWatch();
+
+  // Drain long-lived SSE connections before closing the HTTP server —
+  // server.close() otherwise waits indefinitely for them to end.
+  closeSseConnections();
+
+  if (httpServer) {
+    console.log('[Main] Closing HTTP server...');
+    await new Promise<void>((resolve) => {
+      const timeout = setTimeout(() => {
+        console.warn('[Main] HTTP server close timed out, forcing exit');
+        resolve();
+      }, 5000);
+      httpServer?.close(() => {
+        clearTimeout(timeout);
+        resolve();
+      });
+    });
+  }
 
   if (client) {
     console.log('[Main] Destroying Discord client...');
