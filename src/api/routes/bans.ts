@@ -11,6 +11,7 @@ import { banListEvents, checkIpBan, getCachedBanList } from '../../hall-of-shame
 import { recordIpIdentity } from '../../ip-identity';
 import { recordSubmission } from '../../submissions';
 import { checkAndAutoBan, type IAutoBanResult } from '../../hall-of-shame/auto-ban';
+import { evaluateAlerts } from '../../moderation-stats/alerts';
 
 export const bansRouter = Router();
 
@@ -107,6 +108,9 @@ bansRouter.post('/bans/identity-log', (req: Request, res: Response) => {
       void sendAutoBanAlert(result, ipStr);
     }
   });
+
+  // Realtime alerts (VPN cycling, IP spam, burst, guild evasion)
+  void evaluateAlerts(submission);
 
   // Only log to Discord for NEW identities (first visit / name change), not every page load
   if (body.isNewIdentity) {

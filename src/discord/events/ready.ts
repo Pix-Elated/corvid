@@ -23,6 +23,8 @@ import {
 import { scanCommand } from '../commands/scan';
 import { worldmapBanCommand } from '../commands/worldmap-ban';
 import { clusterCommand } from '../commands/cluster';
+import { startDailyStatsCard } from '../../moderation-stats/daily-card';
+import { setAlertClient } from '../../moderation-stats/alerts';
 import { postOrUpdateBanList, startBanListRefresh } from '../../hall-of-shame';
 import {
   questCommand,
@@ -72,6 +74,10 @@ export async function handleReady(client: Client): Promise<void> {
   // Start QUEST tracker hourly polling + 6-hour treasury surveillance
   startPolling(client);
   startTreasuryWatch(client);
+
+  // Moderation stats: realtime alerts + daily 13:00 UTC digest card
+  setAlertClient(client);
+  startDailyStatsCard(client);
 }
 
 /**
