@@ -25,6 +25,7 @@ import { stopBanListRefresh } from './hall-of-shame';
 import { loadTrackerState, stopPolling, stopTreasuryWatch } from './quest-tracker';
 import { loadIpIdentityState } from './ip-identity';
 import { loadSubmissionsState } from './submissions';
+import { stopDailyStatsCard } from './moderation-stats/daily-card';
 
 let client: Client | null = null;
 let httpServer: Server | null = null;
@@ -155,6 +156,7 @@ async function shutdown(signal: string): Promise<void> {
 
   stopAutoClose();
   stopBanListRefresh();
+  stopDailyStatsCard();
   stopPolling();
   stopTreasuryWatch();
 
