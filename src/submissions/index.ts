@@ -133,6 +133,15 @@ export function recordSubmission(sub: ISubmission): void {
   saveState();
 }
 
+/**
+ * Read-only snapshot of all currently-held submissions. Used by the stats
+ * aggregator and the realtime alert detectors. Returns a shallow copy so
+ * callers can sort/filter without mutating shared state.
+ */
+export function getAllSubmissions(): ISubmission[] {
+  return currentState.submissions.slice();
+}
+
 // =============================================================================
 // Reader / Query
 // =============================================================================
