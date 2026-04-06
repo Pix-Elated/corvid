@@ -38,7 +38,7 @@
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.6",
     "@types/express-rate-limit": "^6.0.2",
-    "@types/node": "^25.3.0",
+    "@types/node": "^25.5.2",
     "@types/sharp": "^0.32.0",
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",
@@ -48,7 +48,7 @@
     "nodemon": "^3.1.14",
     "prettier": "^3.8.1",
     "ts-node": "^10.9.2",
-    "typescript": "^5.3.3"
+    "typescript": "^6.0.2"
   },
   "engines": {
     "node": ">=20.0.0"
