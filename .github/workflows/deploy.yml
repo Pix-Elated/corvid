@@ -1,0 +1,241 @@
+name: Deploy to Azure
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: pix-elated/corvid
+  RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+  CONTAINER_APP_NAME: corvid-discord
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+  build-and-push:
+    name: Build & Push to GHCR
+    runs-on: ubuntu-latest
+    needs: test
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tag }}
+      version: ${{ steps.meta.outputs.version }}
+      short_sha: ${{ steps.meta.outputs.short_sha }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Get version and generate tag
+        id: meta
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          # Use version + short SHA for unique tags that always trigger new revisions
+          TAG="${VERSION}-${SHORT_SHA}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Generated image tag: $TAG"
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tag }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+
+  deploy:
+    name: Deploy to Azure Container Apps
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    environment: master
+    steps:
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Checkout for commit info
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 10
+
+      - name: Notify bot of deployment
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEB_HOOK }}
+          VERSION: ${{ needs.build-and-push.outputs.version }}
+          SHORT_SHA: ${{ needs.build-and-push.outputs.short_sha }}
+        run: |
+          # Send deployment notification to #bot-logs before shutting down
+          # Bot will parse version/commits for the startup message
+          if [ -n "$DISCORD_WEBHOOK" ]; then
+            # Get only the commits in THIS push (not last 5 which causes duplicates)
+            COMMITS=$(git log --pretty=format:"• %s" ${{ github.event.before }}..${{ github.sha }} 2>/dev/null | sed 's/"/\\"/g' | tr '\n' '|' | sed 's/|/\\n/g' || echo "• New deployment")
+            REPO="${{ github.repository }}"
+            COMMIT_URL="https://github.com/${REPO}/commit/${{ github.sha }}"
+            COMPARE_URL="https://github.com/${REPO}/compare/${{ github.event.before }}...${{ github.sha }}"
+
+            # Send embed with version info that bot will parse
+            curl -s -X POST "$DISCORD_WEBHOOK" \
+              -H "Content-Type: application/json" \
+              -d "{
+                \"content\": \"DEPLOYMENT_START|${VERSION}|${SHORT_SHA}\",
+                \"embeds\": [{
+                  \"title\": \"Deploying Corvid v${VERSION}\",
+                  \"color\": 3447003,
+                  \"fields\": [
+                    {\"name\": \"Version\", \"value\": \"${VERSION}\", \"inline\": true},
+                    {\"name\": \"Commit\", \"value\": \"[${SHORT_SHA}](${COMMIT_URL})\", \"inline\": true},
+                    {\"name\": \"Changes\", \"value\": \"${COMMITS}\"}
+                  ],
+                  \"footer\": {\"text\": \"Deployment starting...\"}
+                }]
+              }" || true
+            echo "Sent deployment notification to Discord"
+            sleep 3
+          else
+            echo "No Discord webhook configured, skipping notification"
+          fi
+
+      - name: Deploy to Container App
+        run: |
+          # Use the unique tag (version-sha) to force Azure to create a new revision
+          IMAGE_TAG="${{ needs.build-and-push.outputs.image_tag }}"
+          FULL_IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${IMAGE_TAG}"
+          echo "Deploying image: ${FULL_IMAGE}"
+
+          # Bypass `az containerapp update` — it crashes with NoneType errors when
+          # the template containers array is null (Azure CLI bug).
+          # Use PATCH with only the template so secrets (redacted in GET) aren't touched.
+          SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+          APP_ID="/subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${{ env.RESOURCE_GROUP }}/providers/Microsoft.App/containerApps/${{ env.CONTAINER_APP_NAME }}"
+          API_VERSION="2024-03-01"
+
+          # Fetch only the current template (containers, scale, volumes)
+          TEMPLATE=$(az rest --method GET \
+            --url "https://management.azure.com${APP_ID}?api-version=${API_VERSION}" \
+            --query "properties.template")
+
+          # Patch the image in the first container
+          PATCHED_TEMPLATE=$(echo "$TEMPLATE" | jq --arg img "$FULL_IMAGE" '
+            .containers[0].image = $img
+          ')
+
+          # PATCH only the template — leaves secrets, ingress, registries untouched
+          az rest --method PATCH \
+            --url "https://management.azure.com${APP_ID}?api-version=${API_VERSION}" \
+            --body "$(jq -n --argjson tmpl "$PATCHED_TEMPLATE" '{"properties":{"template":$tmpl}}')"
+
+          echo "Deployment submitted successfully"
+
+      - name: Verify deployment
+        run: |
+          echo "Waiting for deployment to stabilize..."
+          sleep 30
+
+          # Get the app URL
+          APP_URL=$(az containerapp show \
+            --name ${{ env.CONTAINER_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --query "properties.configuration.ingress.fqdn" \
+            --output tsv)
+
+          echo "App URL: https://$APP_URL"
+
+          # Get latest revision info
+          LATEST_REVISION=$(az containerapp show \
+            --name ${{ env.CONTAINER_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --query "properties.latestRevisionName" \
+            --output tsv)
+
+          echo "Latest revision: $LATEST_REVISION"
+
+          # Health check
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://$APP_URL/health")
+
+          if [ "$HTTP_STATUS" -eq 200 ]; then
+            echo "Health check passed!"
+          else
+            echo "Health check failed with status: $HTTP_STATUS"
+            exit 1
+          fi
+
+          echo "### Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image:** ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.build-and-push.outputs.image_tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Revision:** ${LATEST_REVISION}" >> $GITHUB_STEP_SUMMARY
+          echo "- **URL:** https://${APP_URL}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Health:** Passed" >> $GITHUB_STEP_SUMMARY
+
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: deploy
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Get version
+        id: version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Check if release exists
+        id: check_release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "v${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "Release v${{ steps.version.outputs.version }} already exists, skipping"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Release
+        if: steps.check_release.outputs.exists != 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: Release v${{ steps.version.outputs.version }}
+          generate_release_notes: true
+          draft: false
+          prerelease: false

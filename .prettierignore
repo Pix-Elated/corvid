@@ -1,0 +1,17 @@
+# Build outputs
+dist/
+node_modules/
+coverage/
+
+# Git hooks (shell scripts)
+scripts/hooks/
+
+# Generated files
+status.json
+package-lock.json
+
+# Environment files
+.env*
+
+# Docker
+Dockerfile

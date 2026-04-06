@@ -1,0 +1,38 @@
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    target-branch: "staging"
+    labels:
+      - "dependencies"
+      - "type:chore"
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      typescript:
+        patterns:
+          - "typescript"
+          - "@types/*"
+      discord:
+        patterns:
+          - "discord.js"
+      express:
+        patterns:
+          - "express"
+          - "@types/express"
+          - "cors"
+          - "@types/cors"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    target-branch: "staging"
+    labels:
+      - "dependencies"
+      - "area:infra"

@@ -1,0 +1,52 @@
+#!/bin/bash
+# Pre-push hook: Validates branch hygiene before pushing
+
+set -e
+
+# Get the current branch name
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+
+# Protected branches - block direct pushes
+PROTECTED_BRANCHES="master main staging"
+
+for protected in $PROTECTED_BRANCHES; do
+    if [ "$BRANCH" = "$protected" ]; then
+        echo "ERROR: Direct pushes to '$BRANCH' are not allowed."
+        echo ""
+        echo "Please create a feature branch and submit a pull request:"
+        echo "  git checkout -b feature/your-feature-name"
+        echo "  git push -u origin feature/your-feature-name"
+        echo ""
+        echo "Then create a PR to merge into '$BRANCH'."
+        exit 1
+    fi
+done
+
+# Check if branch is behind staging (needs rebase)
+if git rev-parse --verify origin/staging >/dev/null 2>&1; then
+    BEHIND=$(git rev-list --count HEAD..origin/staging 2>/dev/null || echo "0")
+    if [ "$BEHIND" -gt 0 ]; then
+        echo "WARNING: Your branch is $BEHIND commit(s) behind origin/staging."
+        echo ""
+        echo "Consider rebasing before pushing:"
+        echo "  git fetch origin"
+        echo "  git rebase origin/staging"
+        echo ""
+        echo "Proceeding with push anyway..."
+    fi
+fi
+
+# Check for potential merge conflicts with staging
+if git rev-parse --verify origin/staging >/dev/null 2>&1; then
+    MERGE_BASE=$(git merge-base HEAD origin/staging 2>/dev/null || true)
+    if [ -n "$MERGE_BASE" ]; then
+        CONFLICTS=$(git merge-tree "$MERGE_BASE" HEAD origin/staging 2>/dev/null | grep -c "^<<<<<<<" || true)
+        if [ "$CONFLICTS" -gt 0 ]; then
+            echo "WARNING: Potential merge conflicts detected with origin/staging."
+            echo "Consider resolving conflicts before creating a PR."
+        fi
+    fi
+fi
+
+echo "Pre-push checks passed. Pushing to $BRANCH..."
+exit 0
